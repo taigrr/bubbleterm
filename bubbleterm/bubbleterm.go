@@ -3,7 +3,6 @@ package bubbleterm
 import (
 	"os/exec"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/taigrr/bib/emulator"
@@ -11,12 +10,13 @@ import (
 
 // Model represents the terminal bubble state
 type Model struct {
-	emulator *emulator.Emulator
-	width    int
-	height   int
-	focused  bool
-	err      error
-	frame    emulator.EmittedFrame
+	emulator   *emulator.Emulator
+	width      int
+	height     int
+	focused    bool
+	err        error
+	frame      emulator.EmittedFrame
+	cachedView string // Cache the rendered view string
 }
 
 // New creates a new terminal bubble with the specified dimensions
@@ -27,11 +27,12 @@ func New(width, height int) (*Model, error) {
 	}
 
 	return &Model{
-		emulator: emu,
-		width:    width,
-		height:   height,
-		focused:  true,
-		frame:    emulator.EmittedFrame{Rows: make([]string, height)},
+		emulator:   emu,
+		width:      width,
+		height:     height,
+		focused:    true,
+		frame:      emulator.EmittedFrame{Rows: make([]string, height)},
+		cachedView: strings.Repeat("\n", height-1), // Initialize with empty lines
 	}, nil
 }
 
@@ -51,14 +52,10 @@ func NewWithCommand(width, height int, cmd *exec.Cmd) (*Model, error) {
 	return model, nil
 }
 
-// Init initializes the bubble and starts polling for terminal updates
+// Init initializes the bubble (no automatic ticking)
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(
-		pollTerminal(m.emulator),
-		tea.Tick(time.Millisecond*33, func(time.Time) tea.Msg { // ~30 FPS
-			return tickMsg{}
-		}),
-	)
+	// Only do initial poll, no automatic ticking
+	return pollTerminal(m.emulator)
 }
 
 // Update handles messages and updates the model state
@@ -86,20 +83,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case terminalOutputMsg:
 		// Update the frame with new terminal output
 		m.frame = msg.Frame
-		return m, pollTerminal(m.emulator) // Continue polling
+		// Cache the rendered view for fast access
+		m.cachedView = strings.Join(m.frame.Rows, "\n")
+		// Don't immediately poll again - let the tick handle regular polling
+		return m, nil
 
 	case terminalErrorMsg:
 		m.err = msg.Err
 		return m, nil
-
-	case tickMsg:
-		// Regular polling tick
-		return m, tea.Batch(
-			pollTerminal(m.emulator),
-			tea.Tick(time.Millisecond*33, func(time.Time) tea.Msg {
-				return tickMsg{}
-			}),
-		)
 
 	case startCommandMsg:
 		err := m.emulator.StartCommand(msg.Cmd)
@@ -112,14 +103,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// UpdateTerminal manually polls the terminal for updates (called by external ticker)
+func (m *Model) UpdateTerminal() tea.Cmd {
+	return pollTerminal(m.emulator)
+}
+
 // View renders the terminal output
 func (m *Model) View() string {
 	if m.err != nil {
 		return "Terminal error: " + m.err.Error()
 	}
 
-	// Join all rows with newlines to create the full terminal view
-	return strings.Join(m.frame.Rows, "\n")
+	// Return cached view for maximum performance
+	return m.cachedView
 }
 
 // Focus sets the bubble as focused (receives keyboard input)

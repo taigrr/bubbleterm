@@ -24,14 +24,12 @@ type startCommandMsg struct {
 	Cmd *exec.Cmd
 }
 
-// tickMsg is sent periodically to poll the terminal
-type tickMsg struct{}
-
 // Commands (side effects)
 
-// pollTerminal polls the emulator for new output
+// pollTerminal polls the emulator for new output (non-blocking)
 func pollTerminal(emu *emulator.Emulator) tea.Cmd {
 	return func() tea.Msg {
+		// Always return current frame immediately - don't block
 		frame := emu.GetScreen()
 		return terminalOutputMsg{Frame: frame}
 	}
