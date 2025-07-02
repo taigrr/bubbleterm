@@ -102,7 +102,7 @@ func (s *screen) renderLineANSI(y int) string {
 
 	line := s.getLine(y)
 	if len(line) == 0 {
-		return ""
+		return "\033[0m" // Reset and return empty line
 	}
 
 	fg := s.frontColors[y][0]
@@ -119,6 +119,10 @@ func (s *screen) renderLineANSI(y int) string {
 			x++
 		}
 	}
+	
+	// Reset colors at the end of each line to prevent bleeding
+	buf.WriteString("\033[0m")
+	
 	return buf.String()
 }
 
