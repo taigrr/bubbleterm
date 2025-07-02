@@ -34,4 +34,14 @@ func main() {
 	for i, row := range frame.Rows {
 		fmt.Printf("%2d: %s\n", i, row)
 	}
+	fmt.Println("resizing!")
+
+	emu.Resize(100, 40)
+	// Wait a moment for output after resizing
+	time.Sleep(1 * time.Second)
+	fmt.Println("Terminal output after resizing:")
+	frame = emu.GetScreen()
+	for i, row := range frame.Rows {
+		fmt.Printf("%2d: %s\n", i, row)
+	}
 }

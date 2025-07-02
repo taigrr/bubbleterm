@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/creack/pty"
@@ -80,6 +81,9 @@ func (e *Emulator) Resize(cols, rows int) error {
 }
 
 func (e *Emulator) resize(cols, rows int) error {
+	// Debug: print resize info
+	// fmt.Printf("Resizing PTY to %dx%d\n", cols, rows)
+	
 	err := pty.Setsize(e.pty, &pty.Winsize{
 		Rows: uint16(rows),
 		Cols: uint16(cols),
@@ -155,6 +159,14 @@ func (e *Emulator) StartCommand(cmd *exec.Cmd) error {
 	cmd.Stdout = e.tty
 	cmd.Stdin = e.tty
 	cmd.Stderr = e.tty
+	
+	// Set up process group for proper signal handling
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setctty = true
+	cmd.SysProcAttr.Setsid = true
+	// Don't set Ctty explicitly - let the system handle it
 
 	return cmd.Start()
 }
