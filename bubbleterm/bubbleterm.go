@@ -8,6 +8,12 @@ import (
 	"github.com/taigrr/bib/emulator"
 )
 
+// translatedMouseMsg wraps mouse events with translated coordinates
+type translatedMouseMsg struct {
+	OriginalMsg tea.Msg
+	X, Y        int
+}
+
 // Model represents the terminal bubble state
 type Model struct {
 	emulator   *emulator.Emulator
@@ -71,6 +77,41 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		input := keyToTerminalInput(msg)
 		if input != "" {
 			return m, sendInput(m.emulator, input)
+		}
+
+	case tea.MouseClickMsg:
+		if !m.focused {
+			return m, nil
+		}
+		// Send mouse click to terminal
+		return m, sendMouseEvent(m.emulator, msg.Mouse().X, msg.Mouse().Y, int(msg.Mouse().Button), true)
+
+	case tea.MouseReleaseMsg:
+		if !m.focused {
+			return m, nil
+		}
+		// Send mouse release to terminal
+		return m, sendMouseEvent(m.emulator, msg.Mouse().X, msg.Mouse().Y, int(msg.Mouse().Button), false)
+
+	case tea.MouseMotionMsg:
+		if !m.focused {
+			return m, nil
+		}
+		// Send mouse motion to terminal (button -1 indicates motion without button)
+		return m, sendMouseEvent(m.emulator, msg.Mouse().X, msg.Mouse().Y, -1, false)
+
+	case translatedMouseMsg:
+		if !m.focused {
+			return m, nil
+		}
+		// Handle translated mouse events with proper coordinates
+		switch originalMsg := msg.OriginalMsg.(type) {
+		case tea.MouseClickMsg:
+			return m, sendMouseEvent(m.emulator, msg.X, msg.Y, int(originalMsg.Mouse().Button), true)
+		case tea.MouseReleaseMsg:
+			return m, sendMouseEvent(m.emulator, msg.X, msg.Y, int(originalMsg.Mouse().Button), false)
+		case tea.MouseMotionMsg:
+			return m, sendMouseEvent(m.emulator, msg.X, msg.Y, -1, false)
 		}
 
 	case tea.WindowSizeMsg:
@@ -160,6 +201,11 @@ func (m *Model) Resize(width, height int) tea.Cmd {
 	m.width = width
 	m.height = height
 	return resizeTerminal(m.emulator, width, height)
+}
+
+// GetEmulator returns the underlying emulator (for process monitoring)
+func (m *Model) GetEmulator() *emulator.Emulator {
+	return m.emulator
 }
 
 // Close shuts down the terminal emulator

@@ -13,6 +13,12 @@ import (
 	"github.com/taigrr/bib/bubbleterm"
 )
 
+// translatedMouseMsg wraps mouse events with translated coordinates
+type translatedMouseMsg struct {
+	OriginalMsg tea.Msg
+	X, Y        int
+}
+
 func main() {
 	p := tea.NewProgram(NewMultiWindowOS(), tea.WithAltScreen(), tea.WithMouseAllMotion())
 	if _, err := p.Run(); err != nil {
@@ -209,12 +215,35 @@ func (m *MultiWindowOS) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case centralTickMsg:
 		// Centralized terminal updates - poll all terminals
+		var deadWindows []int
 		for i := range m.Windows {
 			cmd := m.Windows[i].Terminal.UpdateTerminal()
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
+			
+			// Check if the process has exited
+			if m.Windows[i].Terminal.GetEmulator().IsProcessExited() {
+				deadWindows = append(deadWindows, i)
+			}
 		}
+		
+		// Remove dead windows (in reverse order to maintain indices)
+		for i := len(deadWindows) - 1; i >= 0; i-- {
+			windowIndex := deadWindows[i]
+			// Close the terminal
+			m.Windows[windowIndex].Terminal.Close()
+			// Remove from slice
+			m.Windows = append(m.Windows[:windowIndex], m.Windows[windowIndex+1:]...)
+			// Adjust focused window index
+			if m.FocusedWindow >= windowIndex {
+				m.FocusedWindow--
+				if m.FocusedWindow < 0 && len(m.Windows) > 0 {
+					m.FocusedWindow = 0
+				}
+			}
+		}
+		
 		// Schedule next tick
 		cmds = append(cmds, tea.Tick(time.Millisecond*33, func(time.Time) tea.Msg {
 			return centralTickMsg{}
@@ -337,10 +366,11 @@ func (m *MultiWindowOS) translateMouseEvent(msg tea.Msg, window TerminalWindow) 
 
 		// Only forward if click is within terminal bounds (34x10)
 		if newX >= 0 && newX < 34 && newY >= 0 && newY < 10 {
-			// Create new mouse event with translated coordinates
-			// Note: This is a simplified approach - actual coordinate translation
-			// would need to create a proper mouse message with new coordinates
-			return msg // For now, return original - coordinate translation needs deeper integration
+			return translatedMouseMsg{
+				OriginalMsg: msg,
+				X:           newX,
+				Y:           newY,
+			}
 		}
 		return nil
 
@@ -350,7 +380,11 @@ func (m *MultiWindowOS) translateMouseEvent(msg tea.Msg, window TerminalWindow) 
 		newY := mouse.Y - window.Y - 1
 
 		if newX >= 0 && newX < 34 && newY >= 0 && newY < 10 {
-			return msg // For now, return original
+			return translatedMouseMsg{
+				OriginalMsg: msg,
+				X:           newX,
+				Y:           newY,
+			}
 		}
 		return nil
 
@@ -360,7 +394,11 @@ func (m *MultiWindowOS) translateMouseEvent(msg tea.Msg, window TerminalWindow) 
 		newY := mouse.Y - window.Y - 1
 
 		if newX >= 0 && newX < 34 && newY >= 0 && newY < 10 {
-			return msg // For now, return original
+			return translatedMouseMsg{
+				OriginalMsg: msg,
+				X:           newX,
+				Y:           newY,
+			}
 		}
 		return nil
 	}

@@ -25,6 +25,11 @@ type startCommandMsg struct {
 	EmulatorID string
 }
 
+// processExitMsg indicates a process has exited
+type processExitMsg struct {
+	EmulatorID string
+}
+
 // Commands (side effects)
 
 // pollTerminal polls the emulator for new output (non-blocking)
@@ -47,6 +52,17 @@ func sendInput(emu *emulator.Emulator, input string) tea.Cmd {
 	}
 }
 
+// sendMouseEvent sends a mouse event to the terminal
+func sendMouseEvent(emu *emulator.Emulator, x, y, button int, pressed bool) tea.Cmd {
+	return func() tea.Msg {
+		err := emu.SendMouse(button, x, y, pressed)
+		if err != nil {
+			return terminalErrorMsg{Err: err, EmulatorID: emu.ID()}
+		}
+		return nil
+	}
+}
+
 // resizeTerminal resizes the terminal
 func resizeTerminal(emu *emulator.Emulator, width, height int) tea.Cmd {
 	return func() tea.Msg {
@@ -55,5 +71,14 @@ func resizeTerminal(emu *emulator.Emulator, width, height int) tea.Cmd {
 			return terminalErrorMsg{Err: err, EmulatorID: emu.ID()}
 		}
 		return nil
+	}
+}
+
+// createExitCallback creates a callback that sends a processExitMsg
+func createExitCallback() func(string) {
+	return func(emulatorID string) {
+		// This will be handled by the program's message loop
+		// We need to send this through the tea program
+		// For now, we'll use a simple approach - the main loop will check for exits
 	}
 }
