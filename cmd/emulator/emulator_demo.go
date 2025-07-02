@@ -11,7 +11,7 @@ import (
 
 func main() {
 	// Create a new emulator
-	emu, err := emulator.New(80, 24)
+	emu, err := emulator.New(80, 24, "default")
 	if err != nil {
 		log.Fatal(err)
 	}

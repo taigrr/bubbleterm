@@ -14,6 +14,7 @@ import (
 // and renders to a framebuffer instead of directly to screen
 type Emulator struct {
 	mu sync.RWMutex
+	id string
 
 	// Terminal state
 	mainScreen  *screen
@@ -39,9 +40,10 @@ type EmittedFrame struct {
 }
 
 // New creates a new headless terminal emulator
-func New(cols, rows int) (*Emulator, error) {
+func New(cols, rows int, id string) (*Emulator, error) {
 	e := &Emulator{
 		mainScreen:  newScreen(cols, rows),
+		id:          id,
 		altScreen:   newScreen(cols, rows),
 		frameRate:   time.Second / 30, // Default 30 FPS
 		stopChan:    make(chan struct{}),
@@ -68,6 +70,13 @@ func New(cols, rows int) (*Emulator, error) {
 	return e, nil
 }
 
+func (e *Emulator) ID() string {
+	if e.id == "" {
+		return "default"
+	}
+	return e.id
+}
+
 // SetSize sets the terminal size (same as Resize for now)
 func (e *Emulator) SetSize(cols, rows int) error {
 	return e.Resize(cols, rows)
@@ -83,7 +92,7 @@ func (e *Emulator) Resize(cols, rows int) error {
 func (e *Emulator) resize(cols, rows int) error {
 	// Debug: print resize info
 	// fmt.Printf("Resizing PTY to %dx%d\n", cols, rows)
-	
+
 	err := pty.Setsize(e.pty, &pty.Winsize{
 		Rows: uint16(rows),
 		Cols: uint16(cols),
@@ -114,7 +123,7 @@ func (e *Emulator) GetScreen() EmittedFrame {
 
 	screen := e.currentScreen()
 	rows := make([]string, screen.size.Y)
-	
+
 	for y := 0; y < screen.size.Y; y++ {
 		rows[y] = screen.renderLineANSI(y)
 	}
@@ -159,7 +168,7 @@ func (e *Emulator) StartCommand(cmd *exec.Cmd) error {
 	cmd.Stdout = e.tty
 	cmd.Stdin = e.tty
 	cmd.Stderr = e.tty
-	
+
 	// Set up process group for proper signal handling
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
@@ -175,11 +184,11 @@ func (e *Emulator) StartCommand(cmd *exec.Cmd) error {
 func (e *Emulator) Write(data []byte) (int, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	
+
 	if e.pty == nil {
 		return 0, ErrPTYNotInitialized
 	}
-	
+
 	return e.pty.Write(data)
 }
 
@@ -192,14 +201,14 @@ func (e *Emulator) SendKey(key string) error {
 // Close shuts down the emulator
 func (e *Emulator) Close() error {
 	close(e.stopChan)
-	
+
 	if e.tty != nil {
 		e.tty.Close()
 	}
 	if e.pty != nil {
 		e.pty.Close()
 	}
-	
+
 	return nil
 }
 

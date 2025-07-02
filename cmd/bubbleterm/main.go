@@ -16,7 +16,7 @@ type model struct {
 func main() {
 	// Create a new terminal bubble and start htop
 	cmd := exec.Command("htop")
-	terminal, err := bubbleterm.NewWithCommand(80, 24, cmd)
+	terminal, err := bubbleterm.NewWithCommand(80, 24, "default", cmd)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	terminalModel, cmd := m.terminal.Update(msg)
 	m.terminal = terminalModel.(*bubbleterm.Model)
-	
+
 	return m, cmd
 }
 
@@ -57,6 +57,7 @@ func (m *model) View() string {
 	if m.err != nil {
 		return "Error: " + m.err.Error()
 	}
-	
+
 	return m.terminal.View()
 }
+

@@ -20,8 +20,8 @@ type Model struct {
 }
 
 // New creates a new terminal bubble with the specified dimensions
-func New(width, height int) (*Model, error) {
-	emu, err := emulator.New(width, height)
+func New(width, height int, id string) (*Model, error) {
+	emu, err := emulator.New(width, height, id)
 	if err != nil {
 		return nil, err
 	}
@@ -37,8 +37,9 @@ func New(width, height int) (*Model, error) {
 }
 
 // NewWithCommand creates a new terminal bubble and starts the specified command
-func NewWithCommand(width, height int, cmd *exec.Cmd) (*Model, error) {
-	model, err := New(width, height)
+func NewWithCommand(width, height int, id string, cmd *exec.Cmd) (*Model, error) {
+	// we need at least 2 columns for
+	model, err := New(width-2, height, id)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +66,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.focused {
 			return m, nil
 		}
-		
+
 		// Convert bubbletea key events to terminal input
 		input := keyToTerminalInput(msg)
 		if input != "" {
@@ -81,6 +82,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case terminalOutputMsg:
+		if msg.EmulatorID != m.emulator.ID() {
+			return m, nil // Ignore messages from other emulators
+		}
 		// Update the frame with new terminal output
 		m.frame = msg.Frame
 		// Cache the rendered view for fast access
@@ -89,10 +93,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case terminalErrorMsg:
+		if msg.EmulatorID != m.emulator.ID() {
+			return m, nil // Ignore messages from other emulators
+		}
 		m.err = msg.Err
 		return m, nil
 
 	case startCommandMsg:
+		if msg.EmulatorID != m.emulator.ID() {
+			return m, nil // Ignore messages from other emulators
+		}
 		err := m.emulator.StartCommand(msg.Cmd)
 		if err != nil {
 			m.err = err
@@ -136,7 +146,7 @@ func (m *Model) Focused() bool {
 // StartCommand starts a new command in the terminal
 func (m *Model) StartCommand(cmd *exec.Cmd) tea.Cmd {
 	return func() tea.Msg {
-		return startCommandMsg{Cmd: cmd}
+		return startCommandMsg{Cmd: cmd, EmulatorID: m.emulator.ID()}
 	}
 }
 

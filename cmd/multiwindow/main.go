@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"time"
 
@@ -114,7 +115,7 @@ func (m *MultiWindowOS) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-			
+
 			// Forward all other keys to the focused terminal
 			if m.FocusedWindow >= 0 && m.FocusedWindow < len(m.Windows) {
 				// Make sure terminal is focused before sending input
@@ -228,6 +229,7 @@ func (m *MultiWindowOS) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		}
+
 	}
 
 	return m, tea.Batch(cmds...)
@@ -239,42 +241,55 @@ func (m *MultiWindowOS) resizeWindow(windowIndex int, deltaWidth, deltaHeight in
 	}
 
 	window := &m.Windows[windowIndex]
-	
-	// Calculate new terminal dimensions (accounting for border/padding)
-	newTermWidth := window.Width - 2 + deltaWidth
-	newTermHeight := window.Height - 2 + deltaHeight
-	
+
+	// Calculate new terminal dimensions (accounting for border + padding = 6px width, 4px height)
+	newTermWidth := window.Width - 6 + deltaWidth
+	newTermHeight := window.Height - 4 + deltaHeight
+
 	// Minimum size constraints
 	if newTermWidth < 20 || newTermHeight < 5 {
 		return nil
 	}
-	
+
 	// Maximum size constraints (reasonable limits)
 	if newTermWidth > 120 || newTermHeight > 40 {
 		return nil
 	}
-	
+
 	// Update window dimensions
-	window.Width = newTermWidth + 2
-	window.Height = newTermHeight + 2
-	
+	window.Width = newTermWidth + 6
+	window.Height = newTermHeight + 4
+
 	// Resize the terminal emulator
 	return window.Terminal.Resize(newTermWidth, newTermHeight)
 }
 
 func (m *MultiWindowOS) createNewTerminalWindow(x, y int) tea.Cmd {
-	// Create a new terminal with bash
+	// Create a completely isolated bash instance with unique environment
 	cmd := exec.Command("bash")
-	terminal, err := bubbleterm.NewWithCommand(38, 12, cmd) // Smaller to account for border/padding
+
+	// Give each terminal a completely unique environment to prevent any sharing
+	cmd.Env = []string{
+		fmt.Sprintf("TERMINAL_ID=%d", len(m.Windows)),
+		fmt.Sprintf("PS1=Terminal-%d$ ", len(m.Windows)+1), // Unique prompt
+		"TERM=xterm-256color",
+		"PATH=/usr/local/bin:/usr/bin:/bin",
+		"HOME=" + os.Getenv("HOME"),
+	}
+
+	newID := createID()
+	// Account for border (1px) + padding (2px) = 3px total on each side
+	// So window width 40 = terminal width 34 (40 - 6)
+	// Window height 14 = terminal height 10 (14 - 4, accounting for top/bottom border+padding)
+	terminal, err := bubbleterm.NewWithCommand(34, 10, newID, cmd)
 	if err != nil {
 		return nil
 	}
 
-	newID := createID()
 	window := TerminalWindow{
 		Title:    fmt.Sprintf("Terminal %d", len(m.Windows)+1),
-		Width:    40, // Terminal width + padding
-		Height:   14, // Terminal height + padding  
+		Width:    40, // Total window width including border and padding
+		Height:   14, // Total window height including border and padding
 		X:        x,
 		Y:        y,
 		Z:        m.CurrentZ,
@@ -319,37 +334,37 @@ func (m *MultiWindowOS) translateMouseEvent(msg tea.Msg, window TerminalWindow) 
 		// Adjust coordinates relative to window position (accounting for border)
 		newX := mouse.X - window.X - 1 // -1 for border
 		newY := mouse.Y - window.Y - 1 // -1 for border
-		
-		// Only forward if click is within terminal bounds
-		if newX >= 0 && newX < 38 && newY >= 0 && newY < 12 {
+
+		// Only forward if click is within terminal bounds (34x10)
+		if newX >= 0 && newX < 34 && newY >= 0 && newY < 10 {
 			// Create new mouse event with translated coordinates
 			// Note: This is a simplified approach - actual coordinate translation
 			// would need to create a proper mouse message with new coordinates
 			return msg // For now, return original - coordinate translation needs deeper integration
 		}
 		return nil
-		
+
 	case tea.MouseMotionMsg:
 		mouse := msg.Mouse()
 		newX := mouse.X - window.X - 1
 		newY := mouse.Y - window.Y - 1
-		
-		if newX >= 0 && newX < 38 && newY >= 0 && newY < 12 {
+
+		if newX >= 0 && newX < 34 && newY >= 0 && newY < 10 {
 			return msg // For now, return original
 		}
 		return nil
-		
+
 	case tea.MouseReleaseMsg:
 		mouse := msg.Mouse()
 		newX := mouse.X - window.X - 1
 		newY := mouse.Y - window.Y - 1
-		
-		if newX >= 0 && newX < 38 && newY >= 0 && newY < 12 {
+
+		if newX >= 0 && newX < 34 && newY >= 0 && newY < 10 {
 			return msg // For now, return original
 		}
 		return nil
 	}
-	
+
 	return msg
 }
 
@@ -359,7 +374,7 @@ func (m *MultiWindowOS) GetCanvas() *lipgloss.Canvas {
 
 	for i, window := range m.Windows {
 		isFocused := m.FocusedWindow == i
-		
+
 		// Choose border color based on focus and insert mode
 		borderColor := "#666666" // Default
 		if isFocused {
@@ -372,7 +387,7 @@ func (m *MultiWindowOS) GetCanvas() *lipgloss.Canvas {
 
 		// Get terminal content
 		terminalContent := window.Terminal.View()
-		
+
 		// Create styled box with terminal content
 		box := lipgloss.NewStyle().
 			Width(window.Width).
@@ -382,7 +397,7 @@ func (m *MultiWindowOS) GetCanvas() *lipgloss.Canvas {
 			Padding(0, 1)
 
 		content := box.Render(terminalContent)
-		
+
 		layers = append(layers,
 			lipgloss.NewLayer(content).
 				X(window.X).
@@ -391,24 +406,24 @@ func (m *MultiWindowOS) GetCanvas() *lipgloss.Canvas {
 				ID(window.ID),
 		)
 	}
-	
+
 	canvas.AddLayers(layers...)
 	return canvas
 }
 
 func (m *MultiWindowOS) View() string {
 	canvas := m.GetCanvas()
-	
+
 	// Add status line
 	status := "Right-click: New Terminal | Left-click: Select/Drag | 'i': Insert Mode | +/-: Resize"
 	if m.InsertMode {
 		status = "INSERT MODE - ESC to exit | All input goes to focused terminal"
 	}
-	
+
 	statusStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#FFFFFF")).
 		Background(lipgloss.Color("#333333")).
 		Padding(0, 1)
-	
+
 	return canvas.Render() + "\n" + statusStyle.Render(status)
 }
