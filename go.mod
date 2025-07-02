@@ -1,4 +1,4 @@
-module github.com/taigrr/bib
+module github.com/taigrr/bubbleterm
 
 go 1.24.4
 

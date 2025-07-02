@@ -5,7 +5,7 @@ import (
 	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/taigrr/bib/bubbleterm"
+	"github.com/taigrr/bubbleterm"
 )
 
 type model struct {
@@ -60,4 +60,3 @@ func (m *model) View() string {
 
 	return m.terminal.View()
 }
-

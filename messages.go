@@ -73,12 +73,3 @@ func resizeTerminal(emu *emulator.Emulator, width, height int) tea.Cmd {
 		return nil
 	}
 }
-
-// createExitCallback creates a callback that sends a processExitMsg
-func createExitCallback() func(string) {
-	return func(emulatorID string) {
-		// This will be handled by the program's message loop
-		// We need to send this through the tea program
-		// For now, we'll use a simple approach - the main loop will check for exits
-	}
-}

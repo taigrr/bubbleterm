@@ -1,37 +1,38 @@
-# Headless Terminal Emulator in Go
+# Bubbleterm: A Headless Terminal Emulator in Go
 
-A fully-functional, headless, embeddable terminal emulator written in Golang. This library focuses on **terminal emulation** - parsing ANSI escape sequences, maintaining screen state, and rendering frames. It's designed to work with PTY libraries like [`creack/pty`](https://github.com/creack/pty) for complete terminal functionality.
+A fully-functional, headless, embeddable terminal emulator written in Golang.
+This library focuses on **terminal emulation** - parsing ANSI escape sequences, maintaining screen state, and rendering frames.
+It's designed to work with PTY libraries like [`creack/pty`](https://github.com/creack/pty) for complete terminal functionality.
+Finally, we provide a Bubbletea-compatible output format for building terminal user interfaces (TUIs).
 
 ## 💡 Goals
 
-This library provides the **terminal emulation layer** that sits between PTY I/O and your application. It can:
+This library provides the **terminal emulation layer** and Bubble components that sits between PTY I/O and your application. It can:
 
 - Parse and interpret ANSI escape sequences (CSI, OSC, ESC, DCS)
 - Maintain terminal screen state (cursor position, colors, attributes)
 - Handle 256-color and true color (24-bit RGB) rendering
 - Support alternate screen buffers and scrollback
-- Process keyboard and mouse input events
+- Process keyboard (and eventually mouse) input events
 - Render frames as ANSI-preserved strings for TUI frameworks
 - Emulate `$TERM = xterm-256color` behavior accurately
-- Integrate seamlessly with PTY libraries like [`creack/pty`](https://github.com/creack/pty)
 
 ## 📦 Features
 
-| Feature | Status |
-|---------|--------|
-| ANSI parser (CSI, OSC) | ✅ Core complete |
-| UTF-8 support | ✅ |
-| Text attributes (bold, underline, etc) | ✅ |
-| 256-color + true color | ✅ |
-| Cursor & scrollback | ✅ |
-| Mouse input (SGR mode) | ✅ In progress |
-| Keyboard input support | ✅ |
-| Resize support | ✅ |
-| $TERM compatibility | ✅ xterm-256color |
-| Bubbletea-compatible output | ✅ |
-| htop rendering | 🟡 Needs validation |
-| Adjustable frame rate | ✅ |
-| Process termination API | ✅ |
+| Feature                                | Status            |
+| -------------------------------------- | ----------------- |
+| ANSI parser (CSI, OSC)                 | ✅ Core complete  |
+| UTF-8 support                          | ✅                |
+| Text attributes (bold, underline, etc) | ✅                |
+| 256-color + true color                 | ✅                |
+| Cursor & scrollback                    | ✅                |
+| Mouse input (SGR mode)                 | ✅ In progress    |
+| Keyboard input support                 | ✅                |
+| Resize support                         | ✅                |
+| `$TERM` compatibility                  | ✅ xterm-256color |
+| Bubbletea-compatible output            | ✅                |
+| Adjustable frame rate                  | ✅                |
+| Process termination API                | ✅                |
 
 ## 📐 Architecture
 
@@ -46,171 +47,156 @@ TerminalEmulator
 └── TermName() string        // Get $TERM ("xterm-256color")
 ```
 
-### Integration with PTY
-
-This library is designed to work with PTY libraries:
-
-```go
-// Create PTY with creack/pty
-pty, tty, _ := pty.Open()
-cmd := exec.Command("htop")
-cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, tty
-cmd.Start()
-
-// Create terminal emulator
-term := NewTerminalEmulator(80, 24)
-
-// Connect PTY output to terminal emulator
-go func() {
-    buf := make([]byte, 1024)
-    for {
-        n, _ := pty.Read(buf)
-        term.FeedInput(buf[:n])  // Parse ANSI and update screen state
-    }
-}()
-
-// Send input from terminal emulator to PTY
-go func() {
-    // Handle keyboard/mouse events and write to pty
-}()
-```
-
-## 🖼️ EmittedFrame Output
-
-The `RenderFrame()` method returns:
-
-```go
-type EmittedFrame struct {
-    Rows []string // Each row is a string with ANSI escape codes embedded
-}
-```
-
-This lets you do:
-
-```go
-for _, row := range emulator.RenderFrame().Rows {
-    fmt.Println(row)
-}
-```
-
-Or integrate into your Bubbletea `View()`.
-
-## 🧪 htop Support Requirements
-
-To support htop, your emulator must:
-
-- Handle 256-color + RGB escape sequences
-- Track and wrap the cursor correctly
-- Maintain scroll regions
-- Interpret full ANSI/VT escape sequences (at least CSI, OSC, ESC, DCS)
-- Support alternate screen buffer (`\x1b[?1049h`)
-- Correctly track terminal resize events
-- React to mouse mode enable/disable sequences:
-  - `\x1b[?1000h` – mouse click tracking
-  - `\x1b[?1006h` – SGR extended mouse reporting
-- Emit output line-by-line in bubbletea-compatible ANSI strings
-
 ## 🚀 Getting Started
 
 ```bash
-go get github.com/yourname/go-headless-terminal
-go get github.com/creack/pty
+go get github.com/taigrr/bubbleterm
 ```
 
-### Basic Example with PTY Integration
+## 📋 Usage Examples
+
+This library provides three main ways to use the terminal emulator:
+
+### 1. Bubbletea Integration (`cmd/bubbleterm`)
+
+Run a terminal application within a Bubbletea TUI:
+
+```bash
+go run cmd/bubbleterm/main.go
+```
+
+This example shows how to:
+
+- Create a terminal bubble that runs `htop`
+- Handle keyboard input (Ctrl+C/q to quit)
+- Forward all messages to the terminal bubble
+- Display the terminal output in a TUI
 
 ```go
-package main
+// Create a new terminal bubble and start htop
+cmd := exec.Command("htop")
+terminal, err := bubbleterm.NewWithCommand(80, 24, "default", cmd)
 
-import (
-    "fmt"
-    "os"
-    "os/exec"
-    "time"
-    
-    "github.com/creack/pty"
-    "github.com/yourname/go-headless-terminal"
-)
-
-func main() {
-    // Create PTY and launch process
-    cmd := exec.Command("htop")
-    cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-    
-    ptyFile, err := pty.Start(cmd)
-    if err != nil {
-        panic(err)
-    }
-    defer ptyFile.Close()
-    
-    // Create terminal emulator
-    term := NewTerminalEmulator(80, 24)
-    term.SetFrameRate(10)
-    
-    // Feed PTY output to terminal emulator
-    go func() {
-        buf := make([]byte, 1024)
-        for {
-            n, err := ptyFile.Read(buf)
-            if err != nil {
-                return
-            }
-            term.FeedInput(buf[:n])
-        }
-    }()
-    
-    // Render terminal frames
-    for {
-        frame := term.RenderFrame()
-        // Clear screen and render
-        fmt.Print("\033[2J\033[H")
-        for _, row := range frame.Rows {
-            fmt.Println(row)
-        }
-        time.Sleep(time.Second / 10)
-    }
+// Use in your Bubbletea model
+func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    var cmd tea.Cmd
+    terminalModel, cmd := m.terminal.Update(msg)
+    m.terminal = terminalModel.(*bubbleterm.Model)
+    return m, cmd
 }
 ```
 
-### Standalone Usage (Without PTY)
+### 2. Headless Emulator (`cmd/emulator`)
+
+Use the terminal emulator without a TUI for programmatic access:
+
+```bash
+go run cmd/emulator/emulator_demo.go
+```
+
+This example demonstrates:
+
+- Creating a headless terminal emulator
+- Starting a command (`htop`)
+- Capturing terminal output as frames
+- Resizing the terminal dynamically
 
 ```go
-func main() {
-    term := NewTerminalEmulator(80, 24)
-    
-    // Simulate ANSI input
-    term.FeedInput([]byte("\033[31mHello \033[32mWorld\033[0m\n"))
-    term.FeedInput([]byte("Line 2\n"))
-    
-    // Render frame
-    frame := term.RenderFrame()
-    for _, row := range frame.Rows {
-        fmt.Println(row)
-    }
+// Create a new emulator
+emu, err := emulator.New(80, 24, "default")
+defer emu.Close()
+
+// Start a command
+cmd := exec.Command("htop")
+err = emu.StartCommand(cmd)
+
+// Get the screen output
+frame := emu.GetScreen()
+for i, row := range frame.Rows {
+    fmt.Printf("%2d: %s\n", i, row)
+}
+
+// Resize the terminal
+emu.Resize(100, 40)
+```
+
+### 3. Multi-Window Terminal Manager (`cmd/multiwindow`)
+
+A complete windowing system with multiple terminal instances:
+
+```bash
+go run cmd/multiwindow/main.go
+```
+
+Features:
+
+- **Right-click**: Create new terminal window
+- **Left-click**: Select and drag windows
+- **'i'**: Enter insert mode (input goes to focused terminal)
+- **ESC**: Exit insert mode
+- **+/-**: Resize focused window
+- **Ctrl+C/q**: Quit application
+
+This example shows advanced usage:
+
+- Multiple terminal instances running simultaneously
+- Window management with focus and z-ordering
+- Mouse event translation between screen and window coordinates
+- Centralized terminal updates with proper cleanup
+
+## 🔧 Core API
+
+### Basic Terminal Emulator
+
+```go
+// Create emulator
+emu, err := emulator.New(width, height, "default")
+
+// Start a command
+cmd := exec.Command("your-command")
+emu.StartCommand(cmd)
+
+// Get rendered output
+frame := emu.GetScreen()
+for _, row := range frame.Rows {
+    fmt.Println(row)
+}
+
+// Resize
+emu.Resize(newWidth, newHeight)
+
+// Cleanup
+emu.Close()
+```
+
+### Bubbletea Integration
+
+```go
+// Create terminal bubble
+terminal, err := bubbleterm.NewWithCommand(width, height, id, cmd)
+
+// In your Bubbletea model
+func (m *model) Init() tea.Cmd {
+    return m.terminal.Init()
+}
+
+func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    terminalModel, cmd := m.terminal.Update(msg)
+    m.terminal = terminalModel.(*bubbleterm.Model)
+    return m, cmd
+}
+
+func (m *model) View() string {
+    return m.terminal.View()
 }
 ```
 
-## 🧠 Tips and Advice
+## Limitations and Known Issues
 
-### ✅ Parse ANSI first, render second
-
-Avoid baking styles into your data layer. Use a `Cell{Rune, Style}` representation and only emit SGR codes during rendering.
-
-### ✅ Treat input and output as decoupled
-
-Read from pty, interpret into state. Push input with `SendKey()` and `SendMouse()`.
-
-### ✅ Normalize all colors to RGB internally
-
-Even if a code uses 256-color, normalize it to `Color{R,G,B}` to simplify rendering.
-
-### ✅ Track alternate screen buffer
-
-Many programs (like htop, vim) switch to an alternate screen and expect it to be cleared/restored.
-
-### ✅ Avoid rendering when nothing changed (optional)
-
-Track dirty lines or hash screen state to avoid redundant re-draws.
+- Damage tracking is not yet implemented, so the entire screen may be redrawn on every frame
+- Sometimes, character deletion (backspace) may not work as expected due to missing damage tracking
+- Running tmux inside the emulator fixes these issues, as tmux handles its own damage tracking
+- We may decide to use a different emulator library in the future if it provides better performance or features
 
 ## 📚 Resources
 
@@ -232,4 +218,4 @@ This library focuses on terminal emulation. For complete terminal functionality:
 - **Terminal Emulation**: This library handles ANSI parsing and screen rendering
 - **TUI Integration**: Output works seamlessly with Bubbletea and other TUI frameworks
 
-Contributions welcome. Let's build the best terminal emulation layer for Go!
+Contributions welcome!

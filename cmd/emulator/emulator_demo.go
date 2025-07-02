@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/taigrr/bib/emulator"
+	"github.com/taigrr/bubbleterm/emulator"
 )
 
 func main() {

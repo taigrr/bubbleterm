@@ -10,7 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/google/uuid"
-	"github.com/taigrr/bib/bubbleterm"
+	"github.com/taigrr/bubbleterm"
 )
 
 // translatedMouseMsg wraps mouse events with translated coordinates
@@ -221,13 +221,13 @@ func (m *MultiWindowOS) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
-			
+
 			// Check if the process has exited
 			if m.Windows[i].Terminal.GetEmulator().IsProcessExited() {
 				deadWindows = append(deadWindows, i)
 			}
 		}
-		
+
 		// Remove dead windows (in reverse order to maintain indices)
 		for i := len(deadWindows) - 1; i >= 0; i-- {
 			windowIndex := deadWindows[i]
@@ -238,12 +238,17 @@ func (m *MultiWindowOS) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Adjust focused window index
 			if m.FocusedWindow >= windowIndex {
 				m.FocusedWindow--
-				if m.FocusedWindow < 0 && len(m.Windows) > 0 {
-					m.FocusedWindow = 0
-				}
 			}
 		}
-		
+
+		// Reset focus if no windows remain
+		if len(m.Windows) == 0 {
+			m.FocusedWindow = -1
+			m.InsertMode = false // Exit insert mode when no windows remain
+		} else if m.FocusedWindow < 0 {
+			m.FocusedWindow = 0
+		}
+
 		// Schedule next tick
 		cmds = append(cmds, tea.Tick(time.Millisecond*33, func(time.Time) tea.Msg {
 			return centralTickMsg{}
