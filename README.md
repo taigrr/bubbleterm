@@ -111,7 +111,9 @@ emu.Resize(100, 40)
 
 A complete windowing system with multiple terminal instances:
 
-<video src="./doc/multiWindow.mp4" controls width="100%"></video>
+
+https://github.com/user-attachments/assets/c318dcab-4152-4166-94ba-3f20e228822d
+
 
 ```bash
 go run cmd/multiwindow/main.go
