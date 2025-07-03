@@ -11,7 +11,7 @@ import (
 
 func main() {
 	// Create a new emulator
-	emu, err := emulator.New(80, 24, "default")
+	emu, err := emulator.New(80, 24)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func main() {
 	}
 
 	// Wait a moment for output
-	time.Sleep(10 * time.Second)
+	time.Sleep(1 * time.Second)
 
 	// Get the screen
 	frame := emu.GetScreen()

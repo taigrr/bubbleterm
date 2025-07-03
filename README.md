@@ -13,7 +13,7 @@ This library provides the **terminal emulation layer** and Bubble components tha
 - Maintain terminal screen state (cursor position, colors, attributes)
 - Handle 256-color and true color (24-bit RGB) rendering
 - Support alternate screen buffers and scrollback
-- Process keyboard (and eventually mouse) input events
+- Process keyboard and mouse input events
 - Render frames as ANSI-preserved strings for TUI frameworks
 - Emulate `$TERM = xterm-256color` behavior accurately
 
@@ -26,26 +26,12 @@ This library provides the **terminal emulation layer** and Bubble components tha
 | Text attributes (bold, underline, etc) | ✅                |
 | 256-color + true color                 | ✅                |
 | Cursor & scrollback                    | ✅                |
-| Mouse input (SGR mode)                 | ✅ In progress    |
 | Keyboard input support                 | ✅                |
 | Resize support                         | ✅                |
 | `$TERM` compatibility                  | ✅ xterm-256color |
 | Bubbletea-compatible output            | ✅                |
 | Adjustable frame rate                  | ✅                |
 | Process termination API                | ✅                |
-
-## 📐 Architecture
-
-```
-TerminalEmulator
-├── FeedInput([]byte)        // Raw ANSI input from PTY
-├── SendKey(KeyEvent)        // Simulate keyboard input
-├── SendMouse(MouseEvent)    // Simulate mouse input
-├── RenderFrame() EmittedFrame // Get rendered screen as ANSI strings
-├── Resize(w, h int)         // Change screen dimensions
-├── SetFrameRate(fps int)    // Control render loop timing
-└── TermName() string        // Get $TERM ("xterm-256color")
-```
 
 ## 🚀 Getting Started
 
@@ -55,7 +41,7 @@ go get github.com/taigrr/bubbleterm
 
 ## 📋 Usage Examples
 
-This library provides three main ways to use the terminal emulator:
+This library provides three ways to use the terminal emulator:
 
 ### 1. Bubbletea Integration (`cmd/bubbleterm`)
 
@@ -73,9 +59,10 @@ This example shows how to:
 - Display the terminal output in a TUI
 
 ```go
+// import bubbleterm "github.com/taigrr/bubbleterm"
 // Create a new terminal bubble and start htop
 cmd := exec.Command("htop")
-terminal, err := bubbleterm.NewWithCommand(80, 24, "default", cmd)
+terminal, err := bubbleterm.NewWithCommand(80, 24, cmd)
 
 // Use in your Bubbletea model
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -86,12 +73,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 ```
 
-### 2. Headless Emulator (`cmd/emulator`)
+### 2. Headless Emulator (`cmd/staticprint`)
 
 Use the terminal emulator without a TUI for programmatic access:
 
 ```bash
-go run cmd/emulator/emulator_demo.go
+go run cmd/staticprint/main.go
 ```
 
 This example demonstrates:
@@ -103,7 +90,7 @@ This example demonstrates:
 
 ```go
 // Create a new emulator
-emu, err := emulator.New(80, 24, "default")
+emu, err := emulator.New(80, 24)
 defer emu.Close()
 
 // Start a command
@@ -150,7 +137,7 @@ This example shows advanced usage:
 
 ```go
 // Create emulator
-emu, err := emulator.New(width, height, "default")
+emu, err := emulator.New(width, height)
 
 // Start a command
 cmd := exec.Command("your-command")
@@ -173,7 +160,8 @@ emu.Close()
 
 ```go
 // Create terminal bubble
-terminal, err := bubbleterm.NewWithCommand(width, height, id, cmd)
+terminal, err := bubbleterm.NewWithCommand(width, height, cmd)
+terminal.SetAutoPoll(false) // Disable auto-polling for updates
 
 // In your Bubbletea model
 func (m *model) Init() tea.Cmd {
@@ -191,6 +179,27 @@ func (m *model) View() string {
 }
 ```
 
+### Advanced Features
+
+```go
+// Focus management
+terminal.Focus()
+terminal.Blur()
+focused := terminal.Focused()
+
+// Manual input sending
+terminal.SendInput("ls\n")
+
+// Process monitoring
+if terminal.GetEmulator().IsProcessExited() {
+    // Handle process exit
+}
+
+// Auto-polling control (for custom update loops)
+terminal.SetAutoPoll(false)
+cmd := terminal.UpdateTerminal() // Manual poll
+```
+
 ## Limitations and Known Issues
 
 - Damage tracking is not yet implemented, so the entire screen may be redrawn on every frame
@@ -205,6 +214,7 @@ func (m *model) View() string {
 - [VT100 / VT220 Reference](https://vt100.net/)
 - [Charm Bubbletea](https://github.com/charmbracelet/bubbletea)
 - [Charm Glamour (ANSI Renderer)](https://github.com/charmbracelet/glamour)
+- [Bubbletea v2 Compositing Example](https://gist.github.com/Gaurav-Gosain/f6ff73cd53b8732af452dc27a3c76f59)
 
 ## 📜 License
 
@@ -219,3 +229,4 @@ This library focuses on terminal emulation. For complete terminal functionality:
 - **TUI Integration**: Output works seamlessly with Bubbletea and other TUI frameworks
 
 Contributions welcome!
+

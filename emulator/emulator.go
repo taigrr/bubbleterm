@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/google/uuid"
 )
 
 // Emulator is a headless terminal emulator that maintains internal state
@@ -26,9 +27,9 @@ type Emulator struct {
 	pty, tty *os.File
 
 	// Process tracking
-	cmd        *exec.Cmd
+	cmd           *exec.Cmd
 	processExited bool
-	onExit     func(string) // Callback when process exits, receives emulator ID
+	onExit        func(string) // Callback when process exits, receives emulator ID
 
 	// Framerate control
 	frameRate time.Duration
@@ -46,10 +47,10 @@ type EmittedFrame struct {
 }
 
 // New creates a new headless terminal emulator
-func New(cols, rows int, id string) (*Emulator, error) {
+func New(cols, rows int) (*Emulator, error) {
 	e := &Emulator{
 		mainScreen:  newScreen(cols, rows),
-		id:          id,
+		id:          uuid.New().String(), // Generate a unique ID
 		altScreen:   newScreen(cols, rows),
 		frameRate:   time.Second / 30, // Default 30 FPS
 		stopChan:    make(chan struct{}),
@@ -77,9 +78,6 @@ func New(cols, rows int, id string) (*Emulator, error) {
 }
 
 func (e *Emulator) ID() string {
-	if e.id == "" {
-		return "default"
-	}
 	return e.id
 }
 
@@ -220,7 +218,7 @@ func (e *Emulator) monitorProcess() {
 
 	// Wait for the process to exit
 	err := e.cmd.Wait()
-	
+
 	e.mu.Lock()
 	e.processExited = true
 	onExit := e.onExit
@@ -272,7 +270,7 @@ func (e *Emulator) SendMouse(button int, x, y int, pressed bool) error {
 	if mouseMode == MMNone {
 		e.mu.Lock()
 		e.viewInts[VIMouseMode] = MMPressReleaseMoveAll // Enable all mouse events
-		e.viewInts[VIMouseEncoding] = MESGR // Use SGR encoding
+		e.viewInts[VIMouseEncoding] = MESGR             // Use SGR encoding
 		mouseMode = MMPressReleaseMoveAll
 		mouseEncoding = MESGR
 		e.mu.Unlock()
@@ -317,18 +315,18 @@ func (e *Emulator) SendMouse(button int, x, y int, pressed bool) error {
 		if !pressed && !isMotion {
 			buttonCode += 3
 		}
-		mouseSeq = fmt.Sprintf("\x1b[M%c%c%c", 
-			buttonCode, 
-			32+x+1, 
+		mouseSeq = fmt.Sprintf("\x1b[M%c%c%c",
+			buttonCode,
+			32+x+1,
 			32+y+1)
 	default: // MEX10
 		// X10 format: \x1b[M + 3 bytes
 		if x > 222 || y > 222 {
 			return nil // X10 can't handle large coordinates
 		}
-		mouseSeq = fmt.Sprintf("\x1b[M%c%c%c", 
-			32+button, 
-			32+x+1, 
+		mouseSeq = fmt.Sprintf("\x1b[M%c%c%c",
+			32+button,
+			32+x+1,
 			32+y+1)
 	}
 

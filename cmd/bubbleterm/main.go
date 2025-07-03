@@ -16,7 +16,7 @@ type model struct {
 func main() {
 	// Create a new terminal bubble and start htop
 	cmd := exec.Command("htop")
-	terminal, err := bubbleterm.NewWithCommand(80, 24, "default", cmd)
+	terminal, err := bubbleterm.NewWithCommand(80, 24, cmd)
 	if err != nil {
 		log.Fatal(err)
 	}

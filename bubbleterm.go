@@ -28,8 +28,8 @@ type Model struct {
 }
 
 // New creates a new terminal bubble with the specified dimensions
-func New(width, height int, id string) (*Model, error) {
-	emu, err := emulator.New(width, height, id)
+func New(width, height int) (*Model, error) {
+	emu, err := emulator.New(width, height)
 	if err != nil {
 		return nil, err
 	}
@@ -50,9 +50,9 @@ func (m *Model) SetAutoPoll(autoPoll bool) {
 }
 
 // NewWithCommand creates a new terminal bubble and starts the specified command
-func NewWithCommand(width, height int, id string, cmd *exec.Cmd) (*Model, error) {
+func NewWithCommand(width, height int, cmd *exec.Cmd) (*Model, error) {
 	// we need at least 2 columns for
-	model, err := New(width, height, id)
+	model, err := New(width, height)
 	if err != nil {
 		return nil, err
 	}

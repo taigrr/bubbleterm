@@ -315,7 +315,7 @@ func (m *MultiWindowOS) createNewTerminalWindow(x, y int) tea.Cmd {
 	// Account for border (1px) + padding (2px) = 3px total on each side
 	// So window width 40 = terminal width 34 (40 - 6)
 	// Window height 14 = terminal height 10 (14 - 4, accounting for top/bottom border+padding)
-	terminal, err := bubbleterm.NewWithCommand(34, 10, newID, cmd)
+	terminal, err := bubbleterm.NewWithCommand(34, 10, cmd)
 	// disable auto-polling to avoid conflicts with our centralized tick
 	terminal.SetAutoPoll(false)
 	if err != nil {
