@@ -43,7 +43,7 @@ func (s *screen) getLine(y int) []rune {
 	return s.chars[y]
 }
 
-func (s *screen) getLineColors(y int) ([]Color, []Color) {
+func (s *screen) GetLineColors(y int) ([]Color, []Color) {
 	if y >= len(s.frontColors) {
 		return nil, nil
 	}
@@ -105,8 +105,7 @@ func (s *screen) renderLineANSI(y int) string {
 		return "\033[0m" // Reset and return empty line
 	}
 
-	fg := s.frontColors[y][0]
-	bg := s.backColors[y][0]
+	var fg, bg Color
 	buf := bytes.NewBuffer(make([]byte, 0, len(line)+10))
 	x := 0
 	for x < len(line) {
@@ -119,10 +118,10 @@ func (s *screen) renderLineANSI(y int) string {
 			x++
 		}
 	}
-	
+
 	// Reset colors at the end of each line to prevent bleeding
 	buf.WriteString("\033[0m")
-	
+
 	return buf.String()
 }
 
@@ -232,7 +231,7 @@ func (s *screen) writeRunes(b []rune) {
 
 // This is a very raw write function. It assumes all the bytes are printable bytes
 // If you use this to write beyond the end of the line, it will panic.
-func (s *screen) rawWriteRunes(x int, y int, b []rune, cr ChangeReason) {
+func (s *screen) rawWriteRunes(x int, y int, b []rune, _ ChangeReason) {
 	if y >= s.size.Y || x+len(b) > s.size.X {
 		fmt.Printf("rawWriteRunes out of range: %v  %v,%v,%v %v %#v, %v,%v\n", s.size, x, y, x+len(b), len(b), string(b), len(s.chars), len(s.chars[0]))
 		return
@@ -325,22 +324,21 @@ func (s *screen) moveCursor(dx, dy int, wrap bool, scroll bool) {
 	}
 }
 
-func (s *screen) printScreen() {
+func (s *screen) PrintScreen() {
 	w, h := s.size.X, s.size.Y
 	fmt.Print("+")
-	for i := 0; i < w; i++ {
+	for range w {
 		fmt.Print("-")
 	}
 	fmt.Println("+")
-	for i := 0; i < h; i++ {
+	for i := range h {
 		lstr := s.renderLineANSI(i)
 		lstr = strings.ReplaceAll(lstr, "\000", " ")
 		fmt.Printf("\033[m|%s\033[m|\n", lstr)
 	}
 	fmt.Print("+")
-	for i := 0; i < w; i++ {
+	for range w {
 		fmt.Print("-")
 	}
 	fmt.Println("+")
 }
-

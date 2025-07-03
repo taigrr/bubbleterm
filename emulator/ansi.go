@@ -122,15 +122,23 @@ func (e *Emulator) ptyReadLoop() {
 			e.mu.Unlock()
 
 			if !success {
-				// TODO: log unhandled command
+				// If we didn't handle the command, we can just ignore it for now
+				_ = true // ignore unused success check for now
 			}
 			continue
 
 		case 127: // DEL  Delete Character
-			// TODO: delete character
+			e.mu.Lock()
+			e.currentScreen().eraseRegion(Region{
+				X:  e.currentScreen().cursorPos.X,
+				Y:  e.currentScreen().cursorPos.Y,
+				X2: e.currentScreen().cursorPos.X + 1,
+				Y2: e.currentScreen().cursorPos.Y + 1,
+			}, CRClear)
+			e.mu.Unlock()
 
 		default:
-			// TODO: unhandled char
+			// unhandled char, undefined behavior
 			continue
 		}
 	}
@@ -667,4 +675,3 @@ func (e *Emulator) handleCmdOSC(r *dupReader) bool {
 
 	return true
 }
-

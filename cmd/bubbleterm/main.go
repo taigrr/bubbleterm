@@ -26,12 +26,14 @@ func main() {
 	}
 
 	p := tea.NewProgram(&m, tea.WithAltScreen())
+
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}
 }
 
 func (m *model) Init() tea.Cmd {
+	m.terminal.Focus()
 	return m.terminal.Init()
 }
 

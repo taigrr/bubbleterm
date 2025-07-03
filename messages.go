@@ -4,7 +4,7 @@ import (
 	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/taigrr/bib/emulator"
+	"github.com/taigrr/bubbleterm/emulator"
 )
 
 // terminalOutputMsg carries new terminal output

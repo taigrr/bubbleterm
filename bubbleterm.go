@@ -5,12 +5,13 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/taigrr/bib/emulator"
+	"github.com/taigrr/bubbleterm/emulator"
 )
 
 // translatedMouseMsg wraps mouse events with translated coordinates
 type translatedMouseMsg struct {
 	OriginalMsg tea.Msg
+	EmulatorID  string // ID of the emulator this message is for
 	X, Y        int
 }
 
@@ -23,6 +24,7 @@ type Model struct {
 	err        error
 	frame      emulator.EmittedFrame
 	cachedView string // Cache the rendered view string
+	autoPoll   bool   // Whether to automatically poll for updates
 }
 
 // New creates a new terminal bubble with the specified dimensions
@@ -39,13 +41,18 @@ func New(width, height int, id string) (*Model, error) {
 		focused:    true,
 		frame:      emulator.EmittedFrame{Rows: make([]string, height)},
 		cachedView: strings.Repeat("\n", height-1), // Initialize with empty lines
+		autoPoll:   true,
 	}, nil
+}
+
+func (m *Model) SetAutoPoll(autoPoll bool) {
+	m.autoPoll = autoPoll
 }
 
 // NewWithCommand creates a new terminal bubble and starts the specified command
 func NewWithCommand(width, height int, id string, cmd *exec.Cmd) (*Model, error) {
 	// we need at least 2 columns for
-	model, err := New(width-2, height, id)
+	model, err := New(width, height, id)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +111,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.focused {
 			return m, nil
 		}
+		if msg.EmulatorID != m.emulator.ID() {
+			return m, nil // Ignore messages from other emulators
+		}
 		// Handle translated mouse events with proper coordinates
 		switch originalMsg := msg.OriginalMsg.(type) {
 		case tea.MouseClickMsg:
@@ -131,6 +141,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Cache the rendered view for fast access
 		m.cachedView = strings.Join(m.frame.Rows, "\n")
 		// Don't immediately poll again - let the tick handle regular polling
+		if m.autoPoll {
+			return m, pollTerminal(m.emulator)
+		}
 		return m, nil
 
 	case terminalErrorMsg:
