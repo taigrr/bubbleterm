@@ -4,7 +4,7 @@ go 1.24.4
 
 require (
 	github.com/charmbracelet/bubbletea/v2 v2.0.0-beta.3
-	github.com/charmbracelet/lipgloss/v2 v2.0.0-beta.2
+	github.com/charmbracelet/lipgloss/v2 v2.0.0-beta.2.0.20250703152125-8e1c474f8a71
 	github.com/creack/pty v1.1.24
 	github.com/google/uuid v1.6.0
 )
