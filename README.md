@@ -218,7 +218,7 @@ cmd := terminal.UpdateTerminal() // Manual poll
 
 ## 📜 License
 
-MIT
+0BSD
 
 ## ⚙️ Roadmap
 
@@ -229,4 +229,3 @@ This library focuses on terminal emulation. For complete terminal functionality:
 - **TUI Integration**: Output works seamlessly with Bubbletea and other TUI frameworks
 
 Contributions welcome!
-
