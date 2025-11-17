@@ -43,7 +43,8 @@ type Emulator struct {
 
 // EmittedFrame represents a rendered frame from the terminal
 type EmittedFrame struct {
-	Rows []string // Each row is a string with ANSI escape codes embedded
+	Rows   []string     // Cached rows for the full screen
+	Damage []LineDamage // Lines that changed since the last frame
 }
 
 // New creates a new headless terminal emulator
@@ -122,17 +123,22 @@ func (e *Emulator) SetFrameRate(fps int) {
 
 // GetScreen returns the current rendered screen as ANSI strings
 func (e *Emulator) GetScreen() EmittedFrame {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
 	screen := e.currentScreen()
-	rows := make([]string, screen.size.Y)
-
-	for y := 0; y < screen.size.Y; y++ {
-		rows[y] = screen.renderLineANSI(y)
+	damage := screen.consumeDamage()
+	for _, d := range damage {
+		screen.renderCache[d.Row] = screen.renderLineANSI(d.Row)
 	}
 
-	return EmittedFrame{Rows: rows}
+	rows := make([]string, len(screen.renderCache))
+	copy(rows, screen.renderCache)
+
+	return EmittedFrame{
+		Rows:   rows,
+		Damage: damage,
+	}
 }
 
 // FeedInput processes raw ANSI input (typically from PTY)
@@ -359,4 +365,5 @@ func (e *Emulator) currentScreen() *screen {
 // switchScreen toggles between main and alternate screen
 func (e *Emulator) switchScreen() {
 	e.onAltScreen = !e.onAltScreen
+	e.currentScreen().markDamageAll(CRScreenSwitch)
 }

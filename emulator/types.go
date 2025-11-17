@@ -101,6 +101,14 @@ const (
 	CRRedraw
 )
 
+// LineDamage represents a changed region on a single row
+type LineDamage struct {
+	Row    int
+	X1     int
+	X2     int
+	Reason ChangeReason
+}
+
 // Pos represents a position on the screen
 type Pos struct {
 	X int

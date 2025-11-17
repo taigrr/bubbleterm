@@ -29,6 +29,7 @@ This library provides the **terminal emulation layer** and Bubble components tha
 | Keyboard input support                 | ✅                |
 | Resize support                         | ✅                |
 | `$TERM` compatibility                  | ✅ xterm-256color |
+| Damage tracking                        | ✅ Line-level     |
 | Bubbletea-compatible output            | ✅                |
 | Adjustable frame rate                  | ✅                |
 | Process termination API                | ✅                |
@@ -204,11 +205,21 @@ terminal.SetAutoPoll(false)
 cmd := terminal.UpdateTerminal() // Manual poll
 ```
 
+### Damage Tracking
+
+Every call to `emu.GetScreen()` returns an `EmittedFrame` with both the full screen buffer and a list of damaged rows:
+
+```go
+frame := emu.GetScreen()
+for _, dmg := range frame.Damage {
+    fmt.Printf("row %d changed (%d-%d) because %v\n", dmg.Row, dmg.X1, dmg.X2, dmg.Reason)
+}
+```
+
+This makes it easy to refresh only the lines that actually changed when compositing multiple terminal views. The default Bubble Tea integration automatically skips re-rendering frames when there are no damage entries, preventing redundant work.
+
 ## Limitations and Known Issues
 
-- Damage tracking is not yet implemented, so the entire screen may be redrawn on every frame
-- Sometimes, character deletion (backspace) may not work as expected due to missing damage tracking
-- Running tmux inside the emulator fixes these issues, as tmux handles its own damage tracking
 - We may decide to use a different emulator library in the future if it provides better performance or features
 
 ## 📚 Resources
