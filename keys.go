@@ -1,7 +1,7 @@
 package bubbleterm
 
 import (
-	tea "github.com/charmbracelet/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 )
 
 // keyToTerminalInput converts bubbletea key messages to terminal input strings

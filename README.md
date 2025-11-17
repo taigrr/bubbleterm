@@ -71,6 +71,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     m.terminal = terminalModel.(*bubbleterm.Model)
     return m, cmd
 }
+
+func (m *model) View() tea.View {
+    return m.terminal.View()
+}
 ```
 
 ### 2. Headless Emulator (`cmd/staticprint`)
@@ -178,7 +182,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     return m, cmd
 }
 
-func (m *model) View() string {
+func (m *model) View() tea.View {
     return m.terminal.View()
 }
 ```

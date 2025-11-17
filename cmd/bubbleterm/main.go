@@ -4,7 +4,7 @@ import (
 	"log"
 	"os/exec"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 	"github.com/taigrr/bubbleterm"
 )
 
@@ -25,7 +25,7 @@ func main() {
 		terminal: terminal,
 	}
 
-	p := tea.NewProgram(&m, tea.WithAltScreen())
+	p := tea.NewProgram(&m)
 
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
@@ -55,10 +55,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *model) View() string {
+func (m *model) View() tea.View {
 	if m.err != nil {
-		return "Error: " + m.err.Error()
+		return tea.NewView("Error: " + m.err.Error())
 	}
 
-	return m.terminal.View()
+	view := m.terminal.View()
+	view.AltScreen = true
+	return view
 }
