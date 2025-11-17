@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/google/uuid"
 	"github.com/taigrr/bubbleterm"
@@ -20,7 +20,7 @@ type translatedMouseMsg struct {
 }
 
 func main() {
-	p := tea.NewProgram(NewMultiWindowOS(), tea.WithAltScreen(), tea.WithMouseAllMotion())
+	p := tea.NewProgram(NewMultiWindowOS())
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}
@@ -58,12 +58,9 @@ func NewMultiWindowOS() *MultiWindowOS {
 }
 
 func (m *MultiWindowOS) Init() tea.Cmd {
-	return tea.Batch(
-		tea.EnableMouseAllMotion,
-		tea.Tick(time.Millisecond*33, func(time.Time) tea.Msg { // 30 FPS centralized ticker
-			return centralTickMsg{}
-		}),
-	)
+	return tea.Tick(time.Millisecond*33, func(time.Time) tea.Msg { // 30 FPS centralized ticker
+		return centralTickMsg{}
+	})
 }
 
 func createID() string {
@@ -431,7 +428,7 @@ func (m *MultiWindowOS) GetCanvas() *lipgloss.Canvas {
 		}
 
 		// Get terminal content
-		terminalContent := window.Terminal.View()
+		terminalView := window.Terminal.View()
 
 		// Create styled box with terminal content
 		box := lipgloss.NewStyle().
@@ -441,7 +438,7 @@ func (m *MultiWindowOS) GetCanvas() *lipgloss.Canvas {
 			Border(lipgloss.RoundedBorder()).
 			Padding(0, 1)
 
-		content := box.Render(terminalContent)
+		content := box.Render(viewToString(terminalView))
 
 		layers = append(layers,
 			lipgloss.NewLayer(content).
@@ -456,7 +453,7 @@ func (m *MultiWindowOS) GetCanvas() *lipgloss.Canvas {
 	return canvas
 }
 
-func (m *MultiWindowOS) View() string {
+func (m *MultiWindowOS) View() tea.View {
 	canvas := m.GetCanvas()
 
 	// Add status line
@@ -470,5 +467,18 @@ func (m *MultiWindowOS) View() string {
 		Background(lipgloss.Color("#333333")).
 		Padding(0, 1)
 
-	return canvas.Render() + "\n" + statusStyle.Render(status)
+	view := tea.NewView(canvas.Render() + "\n" + statusStyle.Render(status))
+	view.AltScreen = true
+	view.MouseMode = tea.MouseModeAllMotion
+	return view
+}
+
+func viewToString(v tea.View) string {
+	if v.Layer == nil {
+		return ""
+	}
+	if s, ok := v.Layer.(fmt.Stringer); ok {
+		return s.String()
+	}
+	return fmt.Sprint(v.Layer)
 }

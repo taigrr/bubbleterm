@@ -1,7 +1,7 @@
 package bubbleterm
 
 import (
-	tea "github.com/charmbracelet/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 )
 
 // keyToTerminalInput converts bubbletea key messages to terminal input strings
@@ -18,8 +18,14 @@ func keyToTerminalInput(msg tea.KeyMsg) string {
 		return "\x7f"
 	case "esc":
 		return "\x1b"
-	case " ":
+	case "space", " ":
 		return " "
+	case "pgup", "pageup":
+		return "\x1b[5~"
+	case "pgdown", "pagedown":
+		return "\x1b[6~"
+	case "shift+tab", "backtab":
+		return "\x1b[Z"
 	case "up":
 		return "\x1b[A"
 	case "down":
@@ -32,10 +38,6 @@ func keyToTerminalInput(msg tea.KeyMsg) string {
 		return "\x1b[H"
 	case "end":
 		return "\x1b[F"
-	case "pageup":
-		return "\x1b[5~"
-	case "pagedown":
-		return "\x1b[6~"
 	case "insert":
 		return "\x1b[2~"
 	case "f1":
