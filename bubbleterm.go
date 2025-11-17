@@ -179,7 +179,14 @@ func (m *Model) View() tea.View {
 	}
 
 	// Return cached view for maximum performance
-	return tea.NewView(m.cachedView)
+	view := tea.NewView(m.cachedView)
+	if pos, show := m.emulator.Cursor(); show {
+		cursor := tea.NewCursor(pos.X, pos.Y)
+		view.Cursor = cursor
+	} else {
+		view.Cursor = nil
+	}
+	return view
 }
 
 // Focus sets the bubble as focused (receives keyboard input)

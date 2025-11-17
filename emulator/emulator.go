@@ -58,6 +58,7 @@ func New(cols, rows int) (*Emulator, error) {
 		viewInts:    make([]int, viewIntCount),
 		viewStrings: make([]string, viewStringCount),
 	}
+	e.viewFlags[VFShowCursor] = true
 
 	var err error
 	e.pty, e.tty, err = pty.Open()
@@ -359,4 +360,18 @@ func (e *Emulator) currentScreen() *screen {
 // switchScreen toggles between main and alternate screen
 func (e *Emulator) switchScreen() {
 	e.onAltScreen = !e.onAltScreen
+}
+
+// Cursor returns the current cursor position and whether it should be shown.
+func (e *Emulator) Cursor() (Pos, bool) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	screen := e.currentScreen()
+	pos := screen.cursorPos
+	show := true
+	if len(e.viewFlags) > int(VFShowCursor) && !e.viewFlags[VFShowCursor] {
+		show = false
+	}
+	return pos, show
 }
