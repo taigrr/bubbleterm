@@ -361,7 +361,7 @@ func (s *screen) moveCursor(dx, dy int, wrap bool, scroll bool) {
 		}
 		if s.cursorPos.Y > s.bottomMargin {
 			s.scroll(s.topMargin, s.bottomMargin, s.bottomMargin-s.cursorPos.Y)
-			s.cursorPos.Y = s.bottomMargin - 1
+			s.cursorPos.Y = s.bottomMargin
 		}
 	} else {
 		s.cursorPos.Y = clamp(s.cursorPos.Y, 0, s.size.Y-1)

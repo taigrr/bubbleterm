@@ -1,6 +1,9 @@
 package emulator
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestScreenDamageTracking(t *testing.T) {
 	s := newScreen(5, 3)
@@ -66,5 +69,38 @@ func TestEmulatorGetScreenDamage(t *testing.T) {
 	}
 	if len(frame.Rows) != 2 {
 		t.Fatalf("expected full row buffer, got %d rows", len(frame.Rows))
+	}
+}
+
+func TestLineFeedScrollStaysOnBottomRow(t *testing.T) {
+	s := newScreen(5, 3)
+
+	writeLine := func(text string) {
+		s.writeRunes([]rune(text))
+		s.moveCursor(-s.cursorPos.X, 1, true, true)
+	}
+
+	writeLine("0")
+	writeLine("1")
+
+	// This line feed should trigger a scroll and leave the cursor on the last row.
+	writeLine("2")
+	if s.cursorPos.Y != s.bottomMargin {
+		t.Fatalf("expected cursor on bottom row after scroll, got %d", s.cursorPos.Y)
+	}
+
+	// Next line should be written to the bottom row, not one above it.
+	s.writeRunes([]rune("3"))
+
+	got := []string{
+		strings.TrimRight(s.lineString(0), " "),
+		strings.TrimRight(s.lineString(1), " "),
+		strings.TrimRight(s.lineString(2), " "),
+	}
+	want := []string{"1", "2", "3"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("row %d = %q, want %q", i, got[i], want[i])
+		}
 	}
 }
