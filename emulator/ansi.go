@@ -98,7 +98,10 @@ func (e *Emulator) ptyReadLoop() {
 
 		case 10: // LF ^J Linefeed (newline)
 			e.mu.Lock()
-			e.currentScreen().moveCursor(0, 1, true, true)
+			// Line feed should behave like CR+LF in most terminals, starting new lines at column 0.
+			// Explicitly reset X so multiline output doesn't keep advancing to the right.
+			screen := e.currentScreen()
+			screen.moveCursor(-screen.cursorPos.X, 1, true, true)
 			e.mu.Unlock()
 
 		case 11: // VT ^K Vertical TAB
