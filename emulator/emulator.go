@@ -10,6 +10,7 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/google/uuid"
+	"golang.org/x/term"
 )
 
 // Emulator is a headless terminal emulator that maintains internal state
@@ -39,6 +40,8 @@ type Emulator struct {
 	viewFlags   []bool
 	viewInts    []int
 	viewStrings []string
+
+	ttyState *term.State
 }
 
 // EmittedFrame represents a rendered frame from the terminal
@@ -65,6 +68,12 @@ func New(cols, rows int) (*Emulator, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	state, err := term.MakeRaw(int(e.pty.Fd()))
+	if err != nil {
+		return nil, fmt.Errorf("set PTY raw mode: %w", err)
+	}
+	e.ttyState = state
 
 	// Set initial size
 	err = e.resize(cols, rows)
@@ -344,6 +353,9 @@ func (e *Emulator) SendMouse(button int, x, y int, pressed bool) error {
 func (e *Emulator) Close() error {
 	close(e.stopChan)
 
+	if e.pty != nil && e.ttyState != nil {
+		term.Restore(int(e.pty.Fd()), e.ttyState)
+	}
 	if e.tty != nil {
 		e.tty.Close()
 	}
