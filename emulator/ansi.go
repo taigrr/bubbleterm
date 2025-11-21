@@ -57,7 +57,8 @@ func (e *Emulator) ptyReadLoop() {
 
 		// printables
 		runes := []rune{}
-		for b >= 32 && (b <= 126 || b >= 128) {
+		isPrintable := b >= 32 && (b <= 126 || b >= 128)
+		for isPrintable {
 
 			runes = append(runes, rune(b))
 
@@ -69,13 +70,14 @@ func (e *Emulator) ptyReadLoop() {
 			if err != nil {
 				return
 			}
+			isPrintable = b >= 32 && (b <= 126 || b >= 128)
 		}
 		if len(runes) > 0 {
 			e.mu.Lock()
 			e.currentScreen().writeRunes(runes)
 			e.mu.Unlock()
 
-			if r.Buffered() == 0 {
+			if r.Buffered() == 0 && isPrintable {
 				continue
 			}
 		}
@@ -226,6 +228,8 @@ func (e *Emulator) handleCmdCSI(r *dupReader) bool {
 	for i, p := range paramParts {
 		params[i], _ = strconv.Atoi(p)
 	}
+
+	screen := e.currentScreen()
 
 	if string(prefix) == "" {
 		switch b {
@@ -469,13 +473,7 @@ func (e *Emulator) handleCmdCSI(r *dupReader) bool {
 			if len(params) == 0 {
 				params = []int{1}
 			}
-			screen := e.currentScreen()
-			screen.eraseRegion(Region{
-				X:  screen.cursorPos.X,
-				Y:  screen.cursorPos.Y,
-				X2: screen.cursorPos.X + params[0],
-				Y2: screen.cursorPos.Y + 1,
-			}, CRClear)
+			screen.deleteChars(screen.cursorPos.X, screen.cursorPos.Y, params[0])
 
 		case 'X': // Erase from cursor pos to the right
 			if len(params) == 0 {

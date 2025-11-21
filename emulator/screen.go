@@ -60,6 +60,36 @@ func (s *screen) GetLineColors(y int) ([]Color, []Color) {
 	return s.frontColors[y], s.backColors[y]
 }
 
+func (s *screen) lineString(y int) string {
+	if y < 0 || y >= len(s.chars) {
+		return ""
+	}
+	return string(s.chars[y])
+}
+
+func (s *screen) deleteChars(x, y, n int) {
+	if y < 0 || y >= s.size.Y || x < 0 || x >= s.size.X || n <= 0 {
+		return
+	}
+	end := min(x+n, s.size.X)
+	count := end - x
+	remaining := s.size.X - end
+
+	if remaining > 0 {
+		copy(s.chars[y][x:x+remaining], s.chars[y][end:])
+		copy(s.frontColors[y][x:x+remaining], s.frontColors[y][end:])
+		copy(s.backColors[y][x:x+remaining], s.backColors[y][end:])
+	}
+
+	fillStart := s.size.X - count
+	for i := fillStart; i < s.size.X; i++ {
+		s.chars[y][i] = ' '
+		s.frontColors[y][i] = s.frontColor
+		s.backColors[y][i] = s.backColor
+	}
+	s.markDamageLine(y, x, s.size.X, CRText)
+}
+
 func (s *screen) StyledLine(x, w, y int) *Line {
 	if y >= len(s.chars) {
 		return &Line{}
