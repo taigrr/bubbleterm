@@ -2,6 +2,7 @@ package emulator
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"sync"
@@ -25,6 +26,11 @@ type Emulator struct {
 
 	// PTY for process communication
 	pty, tty *os.File
+
+	// Pipe-based I/O (alternative to PTY)
+	reader io.Reader
+	writer io.WriteCloser
+	isPipe bool
 
 	// Process tracking
 	cmd           *exec.Cmd
@@ -77,6 +83,31 @@ func New(cols, rows int) (*Emulator, error) {
 	return e, nil
 }
 
+// NewFromPipes creates a headless terminal emulator that reads output from r
+// and writes input to w, instead of using a PTY. This is useful when the
+// process is already running and you have access to its stdin/stdout pipes.
+// The caller is responsible for closing the reader when the process exits.
+func NewFromPipes(cols, rows int, r io.Reader, w io.WriteCloser) (*Emulator, error) {
+	e := &Emulator{
+		mainScreen:  newScreen(cols, rows),
+		id:          uuid.New().String(),
+		altScreen:   newScreen(cols, rows),
+		frameRate:   time.Second / 30,
+		stopChan:    make(chan struct{}),
+		viewFlags:   make([]bool, viewFlagCount),
+		viewInts:    make([]int, viewIntCount),
+		viewStrings: make([]string, viewStringCount),
+		reader:      r,
+		writer:      w,
+		isPipe:      true,
+	}
+
+	// Start the read loop using the provided reader
+	go e.ptyReadLoop()
+
+	return e, nil
+}
+
 func (e *Emulator) ID() string {
 	return e.id
 }
@@ -94,17 +125,16 @@ func (e *Emulator) Resize(cols, rows int) error {
 }
 
 func (e *Emulator) resize(cols, rows int) error {
-	// Debug: print resize info
-	// fmt.Printf("Resizing PTY to %dx%d\n", cols, rows)
-
-	err := pty.Setsize(e.pty, &pty.Winsize{
-		Rows: uint16(rows),
-		Cols: uint16(cols),
-		X:    uint16(cols * 8),
-		Y:    uint16(rows * 16),
-	})
-	if err != nil {
-		return err
+	if !e.isPipe {
+		err := pty.Setsize(e.pty, &pty.Winsize{
+			Rows: uint16(rows),
+			Cols: uint16(cols),
+			X:    uint16(cols * 8),
+			Y:    uint16(rows * 16),
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	e.mainScreen.setSize(cols, rows)
@@ -155,10 +185,15 @@ func (e *Emulator) IsProcessExited() bool {
 	return e.processExited
 }
 
-// StartCommand starts a command in the terminal
+// StartCommand starts a command in the terminal.
+// This is not supported for pipe-based emulators; use NewFromPipes instead.
 func (e *Emulator) StartCommand(cmd *exec.Cmd) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	if e.isPipe {
+		return fmt.Errorf("StartCommand is not supported on pipe-based emulators")
+	}
 
 	if e.pty == nil {
 		return ErrPTYNotInitialized
@@ -238,10 +273,17 @@ func (e *Emulator) monitorProcess() {
 	}
 }
 
-// Write sends data to the PTY (keyboard input)
+// Write sends data to the PTY or pipe (keyboard input)
 func (e *Emulator) Write(data []byte) (int, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
+
+	if e.isPipe {
+		if e.writer == nil {
+			return 0, ErrPTYNotInitialized
+		}
+		return e.writer.Write(data)
+	}
 
 	if e.pty == nil {
 		return 0, ErrPTYNotInitialized
@@ -337,6 +379,13 @@ func (e *Emulator) SendMouse(button int, x, y int, pressed bool) error {
 // Close shuts down the emulator
 func (e *Emulator) Close() error {
 	close(e.stopChan)
+
+	if e.isPipe {
+		if e.writer != nil {
+			e.writer.Close()
+		}
+		return nil
+	}
 
 	if e.tty != nil {
 		e.tty.Close()

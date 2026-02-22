@@ -1,6 +1,7 @@
 package bubbleterm
 
 import (
+	"io"
 	"os/exec"
 	"strings"
 
@@ -47,6 +48,35 @@ func New(width, height int) (*Model, error) {
 
 func (m *Model) SetAutoPoll(autoPoll bool) {
 	m.autoPoll = autoPoll
+}
+
+// NewWithPipes creates a new terminal bubble that reads process output from r
+// and writes user input to w. This allows embedding a terminal view for an
+// already-running process where you have access to its stdin/stdout pipes
+// (e.g., when the process was started by a third-party library).
+//
+// Example:
+//
+//	cmd := exec.Command("bash")
+//	stdin, _ := cmd.StdinPipe()
+//	stdout, _ := cmd.StdoutPipe()
+//	cmd.Start()
+//	model, _ := bubbleterm.NewWithPipes(80, 24, stdout, stdin)
+func NewWithPipes(width, height int, r io.Reader, w io.WriteCloser) (*Model, error) {
+	emu, err := emulator.NewFromPipes(width, height, r, w)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Model{
+		emulator:   emu,
+		width:      width,
+		height:     height,
+		focused:    true,
+		frame:      emulator.EmittedFrame{Rows: make([]string, height)},
+		cachedView: strings.Repeat("\n", height-1),
+		autoPoll:   true,
+	}, nil
 }
 
 // NewWithCommand creates a new terminal bubble and starts the specified command
