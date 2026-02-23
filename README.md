@@ -29,6 +29,8 @@ This library provides the **terminal emulation layer** and Bubble components tha
 | Keyboard input support                 | ✅                |
 | Resize support                         | ✅                |
 | `$TERM` compatibility                  | ✅ xterm-256color |
+| Damage tracking                        | ✅ Line-level     |
+| Cursor position                        | ✅                |
 | Bubbletea-compatible output            | ✅                |
 | Adjustable frame rate                  | ✅                |
 | Process termination API                | ✅                |
@@ -206,9 +208,6 @@ cmd := terminal.UpdateTerminal() // Manual poll
 
 ## Limitations and Known Issues
 
-- Damage tracking is not yet implemented, so the entire screen may be redrawn on every frame
-- Sometimes, character deletion (backspace) may not work as expected due to missing damage tracking
-- Running tmux inside the emulator fixes these issues, as tmux handles its own damage tracking
 - We may decide to use a different emulator library in the future if it provides better performance or features
 
 ## 📚 Resources

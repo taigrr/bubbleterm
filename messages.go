@@ -25,11 +25,6 @@ type startCommandMsg struct {
 	EmulatorID string
 }
 
-// processExitMsg indicates a process has exited
-type processExitMsg struct {
-	EmulatorID string
-}
-
 // Commands (side effects)
 
 // pollTerminal polls the emulator for new output (non-blocking)

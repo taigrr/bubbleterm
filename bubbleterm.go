@@ -166,6 +166,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.EmulatorID != m.emulator.ID() {
 			return m, nil // Ignore messages from other emulators
 		}
+		// Skip rerender if nothing changed
+		if len(msg.Frame.Damage) == 0 {
+			if m.autoPoll {
+				return m, pollTerminal(m.emulator)
+			}
+			return m, nil
+		}
 		// Update the frame with new terminal output
 		m.frame = msg.Frame
 		// Cache the rendered view for fast access
@@ -202,7 +209,7 @@ func (m *Model) UpdateTerminal() tea.Cmd {
 	return pollTerminal(m.emulator)
 }
 
-// View renders the terminal output
+// View renders the terminal output.
 func (m *Model) View() string {
 	if m.err != nil {
 		return "Terminal error: " + m.err.Error()

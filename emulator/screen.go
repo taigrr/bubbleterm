@@ -6,6 +6,13 @@ import (
 	"strings"
 )
 
+// lineDamageState tracks per-line dirty state.
+type lineDamageState struct {
+	dirty  bool
+	x1, x2 int
+	reason ChangeReason
+}
+
 type screen struct {
 	chars       [][]rune
 	backColors  [][]Color
@@ -25,6 +32,9 @@ type screen struct {
 	topMargin, bottomMargin int
 
 	autoWrap bool
+
+	// damage tracks which lines have changed since the last consume.
+	damage []lineDamageState
 }
 
 func newScreen(cols, rows int) *screen {
@@ -33,6 +43,7 @@ func newScreen(cols, rows int) *screen {
 	s.setColors(ColWhite, ColBlack)
 	s.bottomMargin = s.size.Y - 1
 	s.eraseRegion(Region{X: 0, Y: 0, X2: s.size.X, Y2: s.size.Y}, CRClear)
+	s.markDamageAll(CRRedraw)
 	return s
 }
 
@@ -203,6 +214,7 @@ func (s *screen) setSize(w, h int) {
 
 	s.frontColorBuf = make([]Color, w)
 	s.backColorBuf = make([]Color, w)
+	s.damage = make([]lineDamageState, h)
 	s.setColors(s.frontColor, s.backColor)
 }
 
@@ -231,13 +243,14 @@ func (s *screen) writeRunes(b []rune) {
 
 // This is a very raw write function. It assumes all the bytes are printable bytes
 // If you use this to write beyond the end of the line, it will panic.
-func (s *screen) rawWriteRunes(x int, y int, b []rune, _ ChangeReason) {
+func (s *screen) rawWriteRunes(x int, y int, b []rune, reason ChangeReason) {
 	if y >= s.size.Y || x+len(b) > s.size.X {
 		fmt.Printf("rawWriteRunes out of range: %v  %v,%v,%v %v %#v, %v,%v\n", s.size, x, y, x+len(b), len(b), string(b), len(s.chars), len(s.chars[0]))
 		return
 	}
 	copy(s.chars[y][x:x+len(b)], b)
 	s.rawWriteColors(y, x, x+len(b))
+	s.markDamageLine(y, x, x+len(b), reason)
 }
 
 // rawWriteColors copies one line of current colors to the screen, from x1 to x2
@@ -266,6 +279,7 @@ func (s *screen) scroll(y1 int, y2 int, dy int) {
 	}
 
 	if dy > 0 {
+		s.markDamageRegion(Region{X: 0, Y: y1, X2: s.size.X, Y2: y2 + 1}, CRScroll)
 		for y := y2; y >= y1+dy; y-- {
 			copy(s.chars[y], s.chars[y-dy])
 			copy(s.frontColors[y], s.frontColors[y-dy])
@@ -273,6 +287,7 @@ func (s *screen) scroll(y1 int, y2 int, dy int) {
 		}
 		s.eraseRegion(Region{Y: y1, Y2: y1 + dy, X: 0, X2: s.size.X}, CRScroll)
 	} else {
+		s.markDamageRegion(Region{X: 0, Y: y1, X2: s.size.X, Y2: y2 + 1}, CRScroll)
 		for y := y1; y <= y2+dy; y++ {
 			copy(s.chars[y], s.chars[y-dy])
 			copy(s.frontColors[y], s.frontColors[y-dy])
@@ -314,7 +329,7 @@ func (s *screen) moveCursor(dx, dy int, wrap bool, scroll bool) {
 		}
 		if s.cursorPos.Y > s.bottomMargin {
 			s.scroll(s.topMargin, s.bottomMargin, s.bottomMargin-s.cursorPos.Y)
-			s.cursorPos.Y = s.bottomMargin - 1
+			s.cursorPos.Y = s.bottomMargin
 		}
 	} else {
 		s.cursorPos.Y = clamp(s.cursorPos.Y, 0, s.size.Y-1)
@@ -341,4 +356,79 @@ func (s *screen) PrintScreen() {
 		fmt.Print("-")
 	}
 	fmt.Println("+")
+}
+
+func (s *screen) lineString(y int) string {
+	if y >= len(s.chars) {
+		return ""
+	}
+	return string(s.chars[y])
+}
+
+func (s *screen) markDamageLine(y, x1, x2 int, reason ChangeReason) {
+	if y < 0 || y >= len(s.damage) {
+		return
+	}
+	if x1 < 0 {
+		x1 = 0
+	}
+	if x2 > s.size.X {
+		x2 = s.size.X
+	}
+	if x1 >= x2 {
+		return
+	}
+	d := &s.damage[y]
+	if !d.dirty {
+		d.dirty = true
+		d.x1 = x1
+		d.x2 = x2
+		d.reason = reason
+		return
+	}
+	if x1 < d.x1 {
+		d.x1 = x1
+	}
+	if x2 > d.x2 {
+		d.x2 = x2
+	}
+	d.reason = reason
+}
+
+func (s *screen) markDamageRegion(r Region, reason ChangeReason) {
+	r = s.clampRegion(r)
+	if r.X == r.X2 || r.Y == r.Y2 {
+		return
+	}
+	for y := r.Y; y < r.Y2; y++ {
+		s.markDamageLine(y, r.X, r.X2, reason)
+	}
+}
+
+func (s *screen) markDamageAll(reason ChangeReason) {
+	for y := range s.damage {
+		s.damage[y] = lineDamageState{
+			dirty:  true,
+			x1:     0,
+			x2:     s.size.X,
+			reason: reason,
+		}
+	}
+}
+
+func (s *screen) consumeDamage() []LineDamage {
+	damages := make([]LineDamage, 0, len(s.damage))
+	for y, d := range s.damage {
+		if !d.dirty {
+			continue
+		}
+		damages = append(damages, LineDamage{
+			Row:    y,
+			X1:     d.x1,
+			X2:     d.x2,
+			Reason: d.reason,
+		})
+		s.damage[y] = lineDamageState{}
+	}
+	return damages
 }

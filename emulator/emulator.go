@@ -47,9 +47,10 @@ type Emulator struct {
 	viewStrings []string
 }
 
-// EmittedFrame represents a rendered frame from the terminal
+// EmittedFrame represents a rendered frame from the terminal.
 type EmittedFrame struct {
-	Rows []string // Each row is a string with ANSI escape codes embedded
+	Rows   []string     // Each row is a string with ANSI escape codes embedded
+	Damage []LineDamage // Lines that changed since the last GetScreen call
 }
 
 // New creates a new headless terminal emulator
@@ -150,19 +151,31 @@ func (e *Emulator) SetFrameRate(fps int) {
 	e.frameRate = time.Second / time.Duration(fps)
 }
 
-// GetScreen returns the current rendered screen as ANSI strings
+// GetScreen returns the current rendered screen as ANSI strings.
+// It also returns damage information about which lines changed since
+// the last call.
 func (e *Emulator) GetScreen() EmittedFrame {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
 	screen := e.currentScreen()
-	rows := make([]string, screen.size.Y)
+	damage := screen.consumeDamage()
 
+	rows := make([]string, screen.size.Y)
 	for y := 0; y < screen.size.Y; y++ {
 		rows[y] = screen.renderLineANSI(y)
 	}
 
-	return EmittedFrame{Rows: rows}
+	return EmittedFrame{Rows: rows, Damage: damage}
+}
+
+// Cursor returns the current cursor position and whether the cursor is visible.
+func (e *Emulator) Cursor() (Pos, bool) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	screen := e.currentScreen()
+	show := e.viewFlags[VFShowCursor]
+	return screen.cursorPos, show
 }
 
 // FeedInput processes raw ANSI input (typically from PTY)
