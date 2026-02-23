@@ -177,4 +177,3 @@ func ANSIEscape(fg Color, bg Color) []byte {
 
 	return seq
 }
-

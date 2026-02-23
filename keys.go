@@ -13,7 +13,7 @@ func keyToTerminalInput(msg tea.KeyMsg) string {
 	case "tab":
 		return "\t"
 	case "backspace":
-		return "\b"
+		return "\x7f"
 	case "delete":
 		return "\x7f"
 	case "esc":

@@ -64,7 +64,8 @@ func (e *Emulator) ptyReadLoop() {
 
 		// printables
 		runes := []rune{}
-		for b >= 32 && (b <= 126 || b >= 128) {
+		isPrintable := b >= 32 && (b <= 126 || b >= 128)
+		for isPrintable {
 
 			runes = append(runes, rune(b))
 
@@ -76,13 +77,14 @@ func (e *Emulator) ptyReadLoop() {
 			if err != nil {
 				return
 			}
+			isPrintable = b >= 32 && (b <= 126 || b >= 128)
 		}
 		if len(runes) > 0 {
 			e.mu.Lock()
 			e.currentScreen().writeRunes(runes)
 			e.mu.Unlock()
 
-			if r.Buffered() == 0 {
+			if r.Buffered() == 0 && isPrintable {
 				continue
 			}
 		}
@@ -103,7 +105,9 @@ func (e *Emulator) ptyReadLoop() {
 
 		case 10: // LF ^J Linefeed (newline)
 			e.mu.Lock()
-			e.currentScreen().moveCursor(0, 1, true, true)
+			// Line feed behaves like CR+LF: reset column to 0 and advance row.
+			screen := e.currentScreen()
+			screen.moveCursor(-screen.cursorPos.X, 1, true, true)
 			e.mu.Unlock()
 
 		case 11: // VT ^K Vertical TAB
