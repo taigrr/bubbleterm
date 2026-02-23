@@ -3,6 +3,7 @@ package emulator
 import (
 	"bufio"
 	"bytes"
+	"io"
 	"strconv"
 	"strings"
 )
@@ -37,8 +38,14 @@ func (r *dupReader) Buffered() int {
 }
 
 func (e *Emulator) ptyReadLoop() {
+	var source io.Reader
+	if e.isPipe {
+		source = e.reader
+	} else {
+		source = e.pty
+	}
 	r := &dupReader{
-		reader: bufio.NewReader(e.pty),
+		reader: bufio.NewReader(source),
 		buf:    nil,
 		e:      e,
 	}
