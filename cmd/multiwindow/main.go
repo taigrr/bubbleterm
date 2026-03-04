@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/google/uuid"
 	"github.com/taigrr/bubbleterm"
 )
@@ -20,7 +20,7 @@ type translatedMouseMsg struct {
 }
 
 func main() {
-	p := tea.NewProgram(NewMultiWindowOS(), tea.WithAltScreen(), tea.WithMouseAllMotion())
+	p := tea.NewProgram(NewMultiWindowOS())
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}
@@ -34,6 +34,8 @@ type MultiWindowOS struct {
 	CurrentZ      int
 	FocusedWindow int
 	InsertMode    bool // When true, all input goes to focused terminal
+	width         int  // Screen width
+	height        int  // Screen height
 }
 
 // centralTickMsg is sent by our centralized ticker
@@ -54,16 +56,15 @@ func NewMultiWindowOS() *MultiWindowOS {
 	return &MultiWindowOS{
 		FocusedWindow: -1, // No window focused initially
 		Windows:       []TerminalWindow{},
+		width:         80, // Default width
+		height:        24, // Default height
 	}
 }
 
 func (m *MultiWindowOS) Init() tea.Cmd {
-	return tea.Batch(
-		tea.EnableMouseAllMotion,
-		tea.Tick(time.Millisecond*33, func(time.Time) tea.Msg { // 30 FPS centralized ticker
-			return centralTickMsg{}
-		}),
-	)
+	return tea.Tick(time.Millisecond*33, func(time.Time) tea.Msg { // 30 FPS centralized ticker
+		return centralTickMsg{}
+	})
 }
 
 func createID() string {
@@ -149,17 +150,16 @@ func (m *MultiWindowOS) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		} else {
 			// Normal window management mode
-			mouse := msg.Mouse()
-			switch mouse.Button {
+			switch msg.Button {
 			case tea.MouseRight:
 				// Create new terminal window
-				cmd := m.createNewTerminalWindow(mouse.X, mouse.Y)
+				cmd := m.createNewTerminalWindow(msg.X, msg.Y)
 				if cmd != nil {
 					cmds = append(cmds, cmd)
 				}
 			case tea.MouseLeft:
 				// Handle window selection and dragging
-				m.handleWindowClick(mouse.X, mouse.Y)
+				m.handleWindowClick(msg.X, msg.Y)
 			}
 		}
 
@@ -178,9 +178,8 @@ func (m *MultiWindowOS) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		} else if m.Dragging && m.FocusedWindow >= 0 {
 			// Handle window dragging
-			mouse := msg.Mouse()
-			m.Windows[m.FocusedWindow].X = mouse.X - m.DragOffsetX
-			m.Windows[m.FocusedWindow].Y = mouse.Y - m.DragOffsetY
+			m.Windows[m.FocusedWindow].X = msg.X - m.DragOffsetX
+			m.Windows[m.FocusedWindow].Y = msg.Y - m.DragOffsetY
 		}
 
 	case tea.MouseReleaseMsg:
@@ -197,13 +196,15 @@ func (m *MultiWindowOS) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		} else {
-			mouse := msg.Mouse()
-			if mouse.Button == tea.MouseLeft {
+			if msg.Button == tea.MouseLeft {
 				m.Dragging = false
 			}
 		}
 
 	case tea.WindowSizeMsg:
+		// Update our screen dimensions
+		m.width = msg.Width
+		m.height = msg.Height
 		// Forward resize events to all terminals
 		for i := range m.Windows {
 			terminalModel, cmd := m.Windows[i].Terminal.Update(msg)
@@ -276,9 +277,9 @@ func (m *MultiWindowOS) resizeWindow(windowIndex int, deltaWidth, deltaHeight in
 
 	window := &m.Windows[windowIndex]
 
-	// Calculate new terminal dimensions (accounting for border + padding = 6px width, 4px height)
-	newTermWidth := window.Width - 6 + deltaWidth
-	newTermHeight := window.Height - 4 + deltaHeight
+	// Calculate new terminal dimensions (accounting for border = 2px each axis)
+	newTermWidth := window.Width - 2 + deltaWidth
+	newTermHeight := window.Height - 2 + deltaHeight
 
 	// Minimum size constraints
 	if newTermWidth < 20 || newTermHeight < 5 {
@@ -291,8 +292,8 @@ func (m *MultiWindowOS) resizeWindow(windowIndex int, deltaWidth, deltaHeight in
 	}
 
 	// Update window dimensions
-	window.Width = newTermWidth + 6
-	window.Height = newTermHeight + 4
+	window.Width = newTermWidth + 2
+	window.Height = newTermHeight + 2
 
 	// Resize the terminal emulator
 	return window.Terminal.Resize(newTermWidth, newTermHeight)
@@ -324,8 +325,8 @@ func (m *MultiWindowOS) createNewTerminalWindow(x, y int) tea.Cmd {
 
 	window := TerminalWindow{
 		Title:    fmt.Sprintf("Terminal %d", len(m.Windows)+1),
-		Width:    40, // Total window width including border and padding
-		Height:   14, // Total window height including border and padding
+		Width:    36, // Terminal width (34) + border (2)
+		Height:   12, // Terminal height (10) + border (2)
 		X:        x,
 		Y:        y,
 		Z:        m.CurrentZ,
@@ -342,23 +343,28 @@ func (m *MultiWindowOS) createNewTerminalWindow(x, y int) tea.Cmd {
 }
 
 func (m *MultiWindowOS) handleWindowClick(x, y int) {
-	canvas := m.GetCanvas()
-	layer := canvas.Hit(x, y)
-	if layer == nil {
-		return
+	// Find the topmost window that contains the click point
+	// Sort windows by Z-order (descending) to find topmost first
+	topWindow := -1
+	topZ := -1
+	for i, window := range m.Windows {
+		// Check if click is within window bounds
+		if x >= window.X && x < window.X+window.Width &&
+			y >= window.Y && y < window.Y+window.Height {
+			if window.Z > topZ {
+				topZ = window.Z
+				topWindow = i
+			}
+		}
 	}
 
-	// Find the window that was clicked
-	for i, window := range m.Windows {
-		if layer.GetID() == window.ID {
-			m.DragOffsetX = x - layer.GetX()
-			m.DragOffsetY = y - layer.GetY()
-			m.Windows[i].Z = m.CurrentZ
-			m.CurrentZ++
-			m.FocusedWindow = i
-			m.Dragging = true
-			break
-		}
+	if topWindow >= 0 {
+		m.DragOffsetX = x - m.Windows[topWindow].X
+		m.DragOffsetY = y - m.Windows[topWindow].Y
+		m.Windows[topWindow].Z = m.CurrentZ
+		m.CurrentZ++
+		m.FocusedWindow = topWindow
+		m.Dragging = true
 	}
 }
 
@@ -413,12 +419,30 @@ func (m *MultiWindowOS) translateMouseEvent(msg tea.Msg, window TerminalWindow) 
 	return msg
 }
 
-func (m *MultiWindowOS) GetCanvas() *lipgloss.Canvas {
-	canvas := lipgloss.NewCanvas()
-	layers := []*lipgloss.Layer{}
+func (m *MultiWindowOS) GetLayers() []*lipgloss.Layer {
+	var layers []*lipgloss.Layer
 
-	for i, window := range m.Windows {
-		isFocused := m.FocusedWindow == i
+	// Sort windows by Z-order for proper layering
+	type indexedWindow struct {
+		index  int
+		window TerminalWindow
+	}
+	sortedWindows := make([]indexedWindow, len(m.Windows))
+	for i, w := range m.Windows {
+		sortedWindows[i] = indexedWindow{i, w}
+	}
+	// Sort by Z-order (lower Z drawn first)
+	for i := 0; i < len(sortedWindows)-1; i++ {
+		for j := i + 1; j < len(sortedWindows); j++ {
+			if sortedWindows[i].window.Z > sortedWindows[j].window.Z {
+				sortedWindows[i], sortedWindows[j] = sortedWindows[j], sortedWindows[i]
+			}
+		}
+	}
+
+	for _, sw := range sortedWindows {
+		window := sw.window
+		isFocused := m.FocusedWindow == sw.index
 
 		// Choose border color based on focus and insert mode
 		borderColor := "#666666" // Default
@@ -434,30 +458,37 @@ func (m *MultiWindowOS) GetCanvas() *lipgloss.Canvas {
 		terminalContent := window.Terminal.View()
 
 		// Create styled box with terminal content
+		// Don't set Width/Height - let lipgloss infer from content
+		// (setting Width/Height causes ANSI escape code miscounting)
 		box := lipgloss.NewStyle().
-			Width(window.Width).
-			Height(window.Height).
 			BorderForeground(lipgloss.Color(borderColor)).
 			Border(lipgloss.RoundedBorder()).
-			Padding(0, 1)
+			Background(lipgloss.Color("#000000"))
 
-		content := box.Render(terminalContent)
+		content := box.Render(terminalContent.Content)
 
-		layers = append(layers,
-			lipgloss.NewLayer(content).
-				X(window.X).
-				Y(window.Y).
-				Z(window.Z).
-				ID(window.ID),
-		)
+		layer := lipgloss.NewLayer(content).
+			X(window.X).
+			Y(window.Y).
+			Z(window.Z)
+
+		layers = append(layers, layer)
 	}
 
-	canvas.AddLayers(layers...)
-	return canvas
+	return layers
 }
 
-func (m *MultiWindowOS) View() string {
-	canvas := m.GetCanvas()
+func (m *MultiWindowOS) View() tea.View {
+	layers := m.GetLayers()
+	comp := lipgloss.NewCompositor(layers...)
+
+	// Render compositor to a fixed-size canvas to prevent overflow
+	canvasHeight := m.height - 1 // Leave room for status line
+	if canvasHeight < 1 {
+		canvasHeight = 1
+	}
+	canvas := lipgloss.NewCanvas(m.width, canvasHeight)
+	canvas.Compose(comp)
 
 	// Add status line
 	status := "Right-click: New Terminal | Left-click: Select/Drag | 'i': Insert Mode | +/-: Resize"
@@ -468,7 +499,11 @@ func (m *MultiWindowOS) View() string {
 	statusStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#FFFFFF")).
 		Background(lipgloss.Color("#333333")).
-		Padding(0, 1)
+		Width(m.width)
 
-	return canvas.Render() + "\n" + statusStyle.Render(status)
+	var v tea.View
+	v.SetContent(canvas.Render() + "\n" + statusStyle.Render(status))
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeAllMotion
+	return v
 }

@@ -265,7 +265,7 @@ func (e *Emulator) monitorProcess() {
 	}
 
 	// Wait for the process to exit
-	err := e.cmd.Wait()
+	_ = e.cmd.Wait()
 
 	e.mu.Lock()
 	e.processExited = true
@@ -276,13 +276,6 @@ func (e *Emulator) monitorProcess() {
 	// Call the exit callback if set
 	if onExit != nil {
 		onExit(id)
-	}
-
-	// Log the exit for debugging
-	if err != nil {
-		fmt.Printf("Process %s exited with error: %v\n", id, err)
-	} else {
-		fmt.Printf("Process %s exited successfully\n", id)
 	}
 }
 

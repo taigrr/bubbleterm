@@ -76,7 +76,7 @@ func TestNew(t *testing.T) {
 	defer model.Close()
 
 	view := model.View()
-	if view == "" {
+	if view.Content == "" {
 		t.Error("expected non-empty initial view")
 	}
 }
