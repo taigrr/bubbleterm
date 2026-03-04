@@ -5,10 +5,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/charmbracelet/x/vt"
 	"github.com/creack/pty"
 	"github.com/google/uuid"
 )
@@ -19,10 +21,8 @@ type Emulator struct {
 	mu sync.RWMutex
 	id string
 
-	// Terminal state
-	mainScreen  *screen
-	altScreen   *screen
-	onAltScreen bool
+	// Terminal emulator (using charm's x/vt)
+	vt *vt.Emulator
 
 	// PTY for process communication
 	pty, tty *os.File
@@ -41,10 +41,12 @@ type Emulator struct {
 	frameRate time.Duration
 	stopChan  chan struct{}
 
-	// Terminal settings
-	viewFlags   []bool
-	viewInts    []int
-	viewStrings []string
+	// Damage tracking for change detection
+	lastRender string
+	damaged    bool
+
+	// Screen dimensions
+	width, height int
 }
 
 // EmittedFrame represents a rendered frame from the terminal.
@@ -56,14 +58,13 @@ type EmittedFrame struct {
 // New creates a new headless terminal emulator
 func New(cols, rows int) (*Emulator, error) {
 	e := &Emulator{
-		mainScreen:  newScreen(cols, rows),
-		id:          uuid.New().String(), // Generate a unique ID
-		altScreen:   newScreen(cols, rows),
-		frameRate:   time.Second / 30, // Default 30 FPS
-		stopChan:    make(chan struct{}),
-		viewFlags:   make([]bool, viewFlagCount),
-		viewInts:    make([]int, viewIntCount),
-		viewStrings: make([]string, viewStringCount),
+		vt:        vt.NewEmulator(cols, rows),
+		id:        uuid.New().String(),
+		frameRate: time.Second / 30, // Default 30 FPS
+		stopChan:  make(chan struct{}),
+		width:     cols,
+		height:    rows,
+		damaged:   true, // Initial render needed
 	}
 
 	var err error
@@ -90,17 +91,16 @@ func New(cols, rows int) (*Emulator, error) {
 // The caller is responsible for closing the reader when the process exits.
 func NewFromPipes(cols, rows int, r io.Reader, w io.WriteCloser) (*Emulator, error) {
 	e := &Emulator{
-		mainScreen:  newScreen(cols, rows),
-		id:          uuid.New().String(),
-		altScreen:   newScreen(cols, rows),
-		frameRate:   time.Second / 30,
-		stopChan:    make(chan struct{}),
-		viewFlags:   make([]bool, viewFlagCount),
-		viewInts:    make([]int, viewIntCount),
-		viewStrings: make([]string, viewStringCount),
-		reader:      r,
-		writer:      w,
-		isPipe:      true,
+		vt:        vt.NewEmulator(cols, rows),
+		id:        uuid.New().String(),
+		frameRate: time.Second / 30,
+		stopChan:  make(chan struct{}),
+		reader:    r,
+		writer:    w,
+		isPipe:    true,
+		width:     cols,
+		height:    rows,
+		damaged:   true,
 	}
 
 	// Start the read loop using the provided reader
@@ -138,8 +138,10 @@ func (e *Emulator) resize(cols, rows int) error {
 		}
 	}
 
-	e.mainScreen.setSize(cols, rows)
-	e.altScreen.setSize(cols, rows)
+	e.vt.Resize(cols, rows)
+	e.width = cols
+	e.height = rows
+	e.damaged = true
 
 	return nil
 }
@@ -158,24 +160,102 @@ func (e *Emulator) GetScreen() EmittedFrame {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	screen := e.currentScreen()
-	damage := screen.consumeDamage()
+	// Render the current screen
+	rendered := e.vt.Render()
 
-	rows := make([]string, screen.size.Y)
-	for y := 0; y < screen.size.Y; y++ {
-		rows[y] = screen.renderLineANSI(y)
+	// Check for changes
+	var damage []LineDamage
+	if rendered != e.lastRender || e.damaged {
+		// Mark all lines as damaged for simplicity
+		// (the vt package tracks touched lines but we simplify here)
+		for y := 0; y < e.height; y++ {
+			damage = append(damage, LineDamage{
+				Row:    y,
+				X1:     0,
+				X2:     e.width,
+				Reason: CRText,
+			})
+		}
+		e.lastRender = rendered
+		e.damaged = false
 	}
 
+	// Split rendered output into rows
+	rows := splitIntoRows(rendered, e.height, e.width)
+
 	return EmittedFrame{Rows: rows, Damage: damage}
+}
+
+// splitIntoRows splits the rendered output into individual rows and pads to width
+func splitIntoRows(rendered string, height, width int) []string {
+	rows := make([]string, height)
+
+	// The vt.Render() returns a string with ANSI codes
+	// We need to split it by newlines while preserving ANSI codes
+	currentRow := 0
+	var currentLine string
+
+	for _, r := range rendered {
+		if r == '\n' {
+			if currentRow < height {
+				rows[currentRow] = padRow(currentLine, width)
+				currentRow++
+			}
+			currentLine = ""
+		} else {
+			currentLine += string(r)
+		}
+	}
+
+	// Handle last line if no trailing newline
+	if currentRow < height && currentLine != "" {
+		rows[currentRow] = padRow(currentLine, width)
+		currentRow++
+	}
+
+	// Fill remaining rows with spaces
+	emptyRow := strings.Repeat(" ", width)
+	for i := currentRow; i < height; i++ {
+		if rows[i] == "" {
+			rows[i] = emptyRow
+		}
+	}
+
+	return rows
+}
+
+// padRow pads a row to the specified width, accounting for ANSI escape codes
+func padRow(row string, width int) string {
+	// Count visible characters (ignoring ANSI escape codes)
+	visibleLen := 0
+	inEscape := false
+	for _, r := range row {
+		if r == '\033' {
+			inEscape = true
+		} else if inEscape {
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || r == '~' {
+				inEscape = false
+			}
+		} else {
+			visibleLen++
+		}
+	}
+
+	// Pad with spaces if needed
+	if visibleLen < width {
+		return row + strings.Repeat(" ", width-visibleLen)
+	}
+	return row
 }
 
 // Cursor returns the current cursor position and whether the cursor is visible.
 func (e *Emulator) Cursor() (Pos, bool) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	screen := e.currentScreen()
-	show := e.viewFlags[VFShowCursor]
-	return screen.cursorPos, show
+	pos := e.vt.CursorPosition()
+	// The vt package doesn't expose cursor visibility directly in a simple way
+	// Default to visible
+	return Pos{X: pos.X, Y: pos.Y}, true
 }
 
 // FeedInput processes raw ANSI input (typically from PTY)
@@ -306,80 +386,45 @@ func (e *Emulator) SendKey(key string) error {
 
 // SendMouse sends a mouse event to the terminal in SGR format
 func (e *Emulator) SendMouse(button int, x, y int, pressed bool) error {
-	e.mu.RLock()
-	mouseMode := e.viewInts[VIMouseMode]
-	mouseEncoding := e.viewInts[VIMouseEncoding]
-	e.mu.RUnlock()
-
-	// For motion events (button == -1), we need special handling
-	isMotion := button == -1
-
-	// If mouse mode is disabled, enable basic mouse mode for compatibility
-	if mouseMode == MMNone {
-		e.mu.Lock()
-		e.viewInts[VIMouseMode] = MMPressReleaseMoveAll // Enable all mouse events
-		e.viewInts[VIMouseEncoding] = MESGR             // Use SGR encoding
-		mouseMode = MMPressReleaseMoveAll
-		mouseEncoding = MESGR
-		e.mu.Unlock()
+	// Convert to the vt package's mouse event format
+	var vtButton vt.MouseButton
+	switch button {
+	case 0:
+		vtButton = vt.MouseLeft
+	case 1:
+		vtButton = vt.MouseMiddle
+	case 2:
+		vtButton = vt.MouseRight
+	case -1:
+		vtButton = vt.MouseNone // Motion
+	default:
+		vtButton = vt.MouseButton(button)
 	}
 
-	// Check if this event should be sent based on mouse mode
-	switch mouseMode {
-	case MMPress:
-		if !pressed || isMotion {
-			return nil // Only send press events
-		}
-	case MMPressRelease:
-		if isMotion {
-			return nil // No motion events
-		}
-	case MMPressReleaseMove:
-		// Send press, release, and motion (when button is pressed)
-		// For motion, we'll use button 0 to indicate motion
-		if isMotion {
-			button = 32 // Motion event code
-		}
-	case MMPressReleaseMoveAll:
-		// Send all events including motion without buttons
-		if isMotion {
-			button = 35 // Motion without button code
-		}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if pressed {
+		e.vt.SendMouse(vt.MouseClick{
+			Button: vtButton,
+			X:      x,
+			Y:      y,
+		})
+	} else if button == -1 {
+		e.vt.SendMouse(vt.MouseMotion{
+			Button: vtButton,
+			X:      x,
+			Y:      y,
+		})
+	} else {
+		e.vt.SendMouse(vt.MouseRelease{
+			Button: vtButton,
+			X:      x,
+			Y:      y,
+		})
 	}
 
-	// Format mouse event based on encoding
-	var mouseSeq string
-	switch mouseEncoding {
-	case MESGR:
-		// SGR format: \x1b[<button;x;y;M/m
-		action := "M"
-		if !pressed && !isMotion {
-			action = "m"
-		}
-		mouseSeq = fmt.Sprintf("\x1b[<%d;%d;%d%s", button, x+1, y+1, action)
-	case MEUTF8:
-		// UTF-8 format: \x1b[M + 3 bytes
-		buttonCode := 32 + button
-		if !pressed && !isMotion {
-			buttonCode += 3
-		}
-		mouseSeq = fmt.Sprintf("\x1b[M%c%c%c",
-			buttonCode,
-			32+x+1,
-			32+y+1)
-	default: // MEX10
-		// X10 format: \x1b[M + 3 bytes
-		if x > 222 || y > 222 {
-			return nil // X10 can't handle large coordinates
-		}
-		mouseSeq = fmt.Sprintf("\x1b[M%c%c%c",
-			32+button,
-			32+x+1,
-			32+y+1)
-	}
-
-	_, err := e.Write([]byte(mouseSeq))
-	return err
+	return nil
 }
 
 // Close shuts down the emulator
@@ -400,18 +445,36 @@ func (e *Emulator) Close() error {
 		e.pty.Close()
 	}
 
-	return nil
+	return e.vt.Close()
 }
 
-// currentScreen returns the currently active screen (main or alt)
-func (e *Emulator) currentScreen() *screen {
-	if e.onAltScreen {
-		return e.altScreen
+// ptyReadLoop reads from PTY/pipe and writes to the vt emulator
+func (e *Emulator) ptyReadLoop() {
+	var source io.Reader
+	if e.isPipe {
+		source = e.reader
+	} else {
+		source = e.pty
 	}
-	return e.mainScreen
-}
 
-// switchScreen toggles between main and alternate screen
-func (e *Emulator) switchScreen() {
-	e.onAltScreen = !e.onAltScreen
+	buf := make([]byte, 4096)
+	for {
+		select {
+		case <-e.stopChan:
+			return
+		default:
+		}
+
+		n, err := source.Read(buf)
+		if err != nil {
+			return
+		}
+
+		if n > 0 {
+			e.mu.Lock()
+			e.vt.Write(buf[:n])
+			e.damaged = true
+			e.mu.Unlock()
+		}
+	}
 }

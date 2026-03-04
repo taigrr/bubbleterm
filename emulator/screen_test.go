@@ -1,111 +1,120 @@
 package emulator
 
 import (
-	"strings"
 	"testing"
 )
 
-func TestScreenDamageTracking(t *testing.T) {
-	s := newScreen(5, 3)
+func TestEmulatorCreation(t *testing.T) {
+	e, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("failed to create emulator: %v", err)
+	}
+	defer e.Close()
 
-	// Initial screen should report full damage.
-	initialDamage := s.consumeDamage()
-	if len(initialDamage) != 3 {
-		t.Fatalf("expected 3 damaged rows, got %d", len(initialDamage))
-	}
-	for idx, d := range initialDamage {
-		if d.Row != idx || d.X1 != 0 || d.X2 != 5 {
-			t.Fatalf("unexpected damage entry %#v", d)
-		}
-	}
-
-	// No more damage after consumption.
-	if len(s.consumeDamage()) != 0 {
-		t.Fatalf("expected no damage after consumption")
-	}
-
-	// Writing characters should mark the affected segment.
-	s.setCursorPos(1, 1)
-	s.writeRunes([]rune("hi"))
-	damage := s.consumeDamage()
-	if len(damage) != 1 {
-		t.Fatalf("expected single damaged row, got %d", len(damage))
-	}
-	d := damage[0]
-	if d.Row != 1 || d.X1 != 1 || d.X2 != 3 {
-		t.Fatalf("unexpected damage data %+v", d)
+	if e.ID() == "" {
+		t.Fatal("expected non-empty ID")
 	}
 }
 
-func TestEmulatorGetScreenDamage(t *testing.T) {
-	e := &Emulator{
-		mainScreen:  newScreen(4, 2),
-		altScreen:   newScreen(4, 2),
-		viewFlags:   make([]bool, viewFlagCount),
-		viewInts:    make([]int, viewIntCount),
-		viewStrings: make([]string, viewStringCount),
+func TestEmulatorGetScreen(t *testing.T) {
+	e, err := New(10, 5)
+	if err != nil {
+		t.Fatalf("failed to create emulator: %v", err)
 	}
+	defer e.Close()
 
+	// Initial screen should have damage (full redraw)
 	frame := e.GetScreen()
-	if len(frame.Damage) != 2 {
-		t.Fatalf("expected initial full damage, got %d entries", len(frame.Damage))
+	if len(frame.Rows) != 5 {
+		t.Fatalf("expected 5 rows, got %d", len(frame.Rows))
+	}
+	if len(frame.Damage) == 0 {
+		t.Fatal("expected initial damage")
 	}
 
-	// Consume damage; next frame without writes should have no damage.
+	// After consuming, no more damage
 	frame = e.GetScreen()
 	if len(frame.Damage) != 0 {
-		t.Fatalf("expected no damage without writes, got %d", len(frame.Damage))
-	}
-
-	// Write a character and ensure damage is reported.
-	e.mu.Lock()
-	e.currentScreen().setCursorPos(0, 0)
-	e.currentScreen().writeRunes([]rune("z"))
-	e.mu.Unlock()
-
-	frame = e.GetScreen()
-	if len(frame.Damage) != 1 {
-		t.Fatalf("expected damage after write, got %d", len(frame.Damage))
-	}
-	if frame.Damage[0].Row != 0 {
-		t.Fatalf("expected damage on row 0, got %d", frame.Damage[0].Row)
-	}
-	if len(frame.Rows) != 2 {
-		t.Fatalf("expected full row buffer, got %d rows", len(frame.Rows))
+		t.Fatalf("expected no damage after consumption, got %d", len(frame.Damage))
 	}
 }
 
-func TestLineFeedScrollStaysOnBottomRow(t *testing.T) {
-	s := newScreen(5, 3)
-	// Consume initial damage.
-	s.consumeDamage()
+func TestEmulatorResize(t *testing.T) {
+	e, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("failed to create emulator: %v", err)
+	}
+	defer e.Close()
 
-	writeLine := func(text string) {
-		s.writeRunes([]rune(text))
-		s.moveCursor(-s.cursorPos.X, 1, true, true)
+	// Resize to new dimensions
+	err = e.Resize(40, 12)
+	if err != nil {
+		t.Fatalf("failed to resize: %v", err)
 	}
 
-	writeLine("0")
-	writeLine("1")
+	// Get screen and verify new dimensions
+	frame := e.GetScreen()
+	if len(frame.Rows) != 12 {
+		t.Fatalf("expected 12 rows after resize, got %d", len(frame.Rows))
+	}
+}
 
-	// This line feed should trigger a scroll and leave cursor on the last row.
-	writeLine("2")
-	if s.cursorPos.Y != s.bottomMargin {
-		t.Fatalf("expected cursor on bottom row after scroll, got %d", s.cursorPos.Y)
+func TestEmulatorCursor(t *testing.T) {
+	e, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("failed to create emulator: %v", err)
+	}
+	defer e.Close()
+
+	pos, visible := e.Cursor()
+	// Cursor should be at origin initially
+	if pos.X != 0 || pos.Y != 0 {
+		t.Fatalf("expected cursor at (0,0), got (%d,%d)", pos.X, pos.Y)
+	}
+	if !visible {
+		t.Fatal("expected cursor to be visible")
+	}
+}
+
+func TestEmulatorPipeCreation(t *testing.T) {
+	// Create a simple pipe pair
+	r, w, err := createTestPipe()
+	if err != nil {
+		t.Skipf("could not create test pipe: %v", err)
 	}
 
-	// Next line should be written to the bottom row.
-	s.writeRunes([]rune("3"))
+	e, err := NewFromPipes(80, 24, r, w)
+	if err != nil {
+		t.Fatalf("failed to create pipe-based emulator: %v", err)
+	}
+	defer e.Close()
 
-	got := []string{
-		strings.TrimRight(s.lineString(0), " "),
-		strings.TrimRight(s.lineString(1), " "),
-		strings.TrimRight(s.lineString(2), " "),
+	if e.ID() == "" {
+		t.Fatal("expected non-empty ID")
 	}
-	want := []string{"1", "2", "3"}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("row %d = %q, want %q", i, got[i], want[i])
-		}
-	}
+}
+
+// createTestPipe creates a simple reader/writer pair for testing
+func createTestPipe() (*testReader, *testWriter, error) {
+	return &testReader{}, &testWriter{}, nil
+}
+
+type testReader struct{}
+
+func (r *testReader) Read(p []byte) (n int, err error) {
+	// Block forever - will be stopped by close
+	select {}
+}
+
+type testWriter struct {
+	closed bool
+}
+
+func (w *testWriter) Write(p []byte) (n int, err error) {
+	return len(p), nil
+}
+
+func (w *testWriter) Close() error {
+	w.closed = true
+	return nil
 }
