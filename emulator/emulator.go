@@ -258,12 +258,6 @@ func (e *Emulator) Cursor() (Pos, bool) {
 	return Pos{X: pos.X, Y: pos.Y}, true
 }
 
-// FeedInput processes raw ANSI input (typically from PTY)
-func (e *Emulator) FeedInput(data []byte) {
-	// This will be called by the PTY read loop
-	// For now, we don't need to expose this publicly since PTY handles it
-}
-
 // SetOnExit sets a callback function that will be called when the process exits
 func (e *Emulator) SetOnExit(callback func(string)) {
 	e.mu.Lock()
