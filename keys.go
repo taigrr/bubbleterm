@@ -15,7 +15,7 @@ func keyToTerminalInput(msg tea.KeyMsg) string {
 	case "backspace":
 		return "\x7f"
 	case "delete":
-		return "\x7f"
+		return "\x1b[3~"
 	case "esc":
 		return "\x1b"
 	case " ":
@@ -62,14 +62,52 @@ func keyToTerminalInput(msg tea.KeyMsg) string {
 		return "\x1b[23~"
 	case "f12":
 		return "\x1b[24~"
+	case "ctrl+a":
+		return "\x01"
+	case "ctrl+b":
+		return "\x02"
 	case "ctrl+c":
 		return "\x03"
 	case "ctrl+d":
 		return "\x04"
-	case "ctrl+z":
-		return "\x1a"
+	case "ctrl+e":
+		return "\x05"
+	case "ctrl+f":
+		return "\x06"
+	case "ctrl+g":
+		return "\x07"
+	case "ctrl+h":
+		return "\x08"
+	case "ctrl+k":
+		return "\x0b"
 	case "ctrl+l":
 		return "\x0c"
+	case "ctrl+n":
+		return "\x0e"
+	case "ctrl+o":
+		return "\x0f"
+	case "ctrl+p":
+		return "\x10"
+	case "ctrl+r":
+		return "\x12"
+	case "ctrl+s":
+		return "\x13"
+	case "ctrl+t":
+		return "\x14"
+	case "ctrl+u":
+		return "\x15"
+	case "ctrl+w":
+		return "\x17"
+	case "ctrl+x":
+		return "\x18"
+	case "ctrl+y":
+		return "\x19"
+	case "ctrl+z":
+		return "\x1a"
+	case "ctrl+\\":
+		return "\x1c"
+	case "ctrl+]":
+		return "\x1d"
 	default:
 		// For regular characters, return the string as-is
 		// This handles letters, numbers, symbols, etc.

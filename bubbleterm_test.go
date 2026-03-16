@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestNewWithPipes(t *testing.T) {
@@ -67,6 +69,63 @@ func TestNewWithPipes_SendInput(t *testing.T) {
 		t.Fatal("timed out waiting for input")
 	}
 }
+
+func TestKeyToTerminalInput(t *testing.T) {
+	tests := []struct {
+		name     string
+		key      string
+		expected string
+	}{
+		{"enter", "enter", "\r"},
+		{"tab", "tab", "\t"},
+		{"backspace", "backspace", "\x7f"},
+		{"delete", "delete", "\x1b[3~"},
+		{"escape", "esc", "\x1b"},
+		{"space", " ", " "},
+		{"up", "up", "\x1b[A"},
+		{"down", "down", "\x1b[B"},
+		{"right", "right", "\x1b[C"},
+		{"left", "left", "\x1b[D"},
+		{"home", "home", "\x1b[H"},
+		{"end", "end", "\x1b[F"},
+		{"pageup", "pageup", "\x1b[5~"},
+		{"pagedown", "pagedown", "\x1b[6~"},
+		{"insert", "insert", "\x1b[2~"},
+		{"ctrl+a", "ctrl+a", "\x01"},
+		{"ctrl+c", "ctrl+c", "\x03"},
+		{"ctrl+d", "ctrl+d", "\x04"},
+		{"ctrl+e", "ctrl+e", "\x05"},
+		{"ctrl+k", "ctrl+k", "\x0b"},
+		{"ctrl+l", "ctrl+l", "\x0c"},
+		{"ctrl+r", "ctrl+r", "\x12"},
+		{"ctrl+u", "ctrl+u", "\x15"},
+		{"ctrl+w", "ctrl+w", "\x17"},
+		{"ctrl+z", "ctrl+z", "\x1a"},
+		{"f1", "f1", "\x1bOP"},
+		{"f12", "f12", "\x1b[24~"},
+		{"letter a", "a", "a"},
+		{"letter z", "z", "z"},
+		{"digit 5", "5", "5"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a minimal KeyMsg using bubbletea's parser
+			// We test the string-based matching directly
+			msg := testKeyMsg(tt.key)
+			got := keyToTerminalInput(msg)
+			if got != tt.expected {
+				t.Errorf("keyToTerminalInput(%q) = %q, want %q", tt.key, got, tt.expected)
+			}
+		})
+	}
+}
+
+// testKeyMsg creates a tea.KeyMsg that returns the given string from String()
+type testKeyMsg string
+
+func (k testKeyMsg) String() string    { return string(k) }
+func (k testKeyMsg) Key() tea.Key      { return tea.Key{} }
 
 func TestNew(t *testing.T) {
 	model, err := New(80, 24)
