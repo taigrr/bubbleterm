@@ -1,7 +1,10 @@
 package emulator
 
 import (
+	"os/exec"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestEmulatorCreation(t *testing.T) {
@@ -91,6 +94,342 @@ func TestEmulatorPipeCreation(t *testing.T) {
 
 	if e.ID() == "" {
 		t.Fatal("expected non-empty ID")
+	}
+}
+
+func TestEmulatorSendKey(t *testing.T) {
+	e, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("failed to create emulator: %v", err)
+	}
+	defer e.Close()
+
+	// SendKey should not error on a valid emulator
+	err = e.SendKey("hello")
+	if err != nil {
+		t.Fatalf("SendKey failed: %v", err)
+	}
+}
+
+func TestEmulatorSendMouse(t *testing.T) {
+	e, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("failed to create emulator: %v", err)
+	}
+	defer e.Close()
+
+	// Test mouse click
+	err = e.SendMouse(0, 10, 5, true) // left click
+	if err != nil {
+		t.Fatalf("SendMouse (click) failed: %v", err)
+	}
+
+	// Test mouse release
+	err = e.SendMouse(0, 10, 5, false) // left release
+	if err != nil {
+		t.Fatalf("SendMouse (release) failed: %v", err)
+	}
+
+	// Test mouse motion (button -1)
+	err = e.SendMouse(-1, 15, 10, false)
+	if err != nil {
+		t.Fatalf("SendMouse (motion) failed: %v", err)
+	}
+
+	// Test middle and right buttons
+	err = e.SendMouse(1, 5, 5, true) // middle click
+	if err != nil {
+		t.Fatalf("SendMouse (middle) failed: %v", err)
+	}
+	err = e.SendMouse(2, 5, 5, true) // right click
+	if err != nil {
+		t.Fatalf("SendMouse (right) failed: %v", err)
+	}
+}
+
+func TestEmulatorSetFrameRate(t *testing.T) {
+	e, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("failed to create emulator: %v", err)
+	}
+	defer e.Close()
+
+	// Should not panic
+	e.SetFrameRate(60)
+	e.SetFrameRate(1)
+}
+
+func TestEmulatorSetSize(t *testing.T) {
+	e, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("failed to create emulator: %v", err)
+	}
+	defer e.Close()
+
+	err = e.SetSize(40, 12)
+	if err != nil {
+		t.Fatalf("SetSize failed: %v", err)
+	}
+
+	frame := e.GetScreen()
+	if len(frame.Rows) != 12 {
+		t.Fatalf("expected 12 rows after SetSize, got %d", len(frame.Rows))
+	}
+}
+
+func TestEmulatorStartCommand(t *testing.T) {
+	e, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("failed to create emulator: %v", err)
+	}
+	defer e.Close()
+
+	cmd := exec.Command("echo", "hello from bubbleterm")
+	err = e.StartCommand(cmd)
+	if err != nil {
+		t.Fatalf("StartCommand failed: %v", err)
+	}
+
+	// Wait for the process to complete and output to be processed
+	time.Sleep(200 * time.Millisecond)
+
+	frame := e.GetScreen()
+	combined := strings.Join(frame.Rows, "\n")
+	if !strings.Contains(combined, "hello from bubbleterm") {
+		t.Errorf("expected screen to contain 'hello from bubbleterm', got: %q", combined)
+	}
+
+	// Process should have exited
+	if !e.IsProcessExited() {
+		t.Error("expected process to have exited")
+	}
+}
+
+func TestEmulatorStartCommandOnPipe(t *testing.T) {
+	r, w, _ := createTestPipe()
+	e, err := NewFromPipes(80, 24, r, w)
+	if err != nil {
+		t.Fatalf("failed to create pipe-based emulator: %v", err)
+	}
+	defer e.Close()
+
+	cmd := exec.Command("echo", "test")
+	err = e.StartCommand(cmd)
+	if err == nil {
+		t.Fatal("expected error when calling StartCommand on pipe-based emulator")
+	}
+}
+
+func TestEmulatorOnExitCallback(t *testing.T) {
+	e, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("failed to create emulator: %v", err)
+	}
+	defer e.Close()
+
+	exitCalled := make(chan string, 1)
+	e.SetOnExit(func(id string) {
+		exitCalled <- id
+	})
+
+	cmd := exec.Command("true")
+	err = e.StartCommand(cmd)
+	if err != nil {
+		t.Fatalf("StartCommand failed: %v", err)
+	}
+
+	select {
+	case id := <-exitCalled:
+		if id != e.ID() {
+			t.Errorf("exit callback received wrong ID: got %q, want %q", id, e.ID())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for exit callback")
+	}
+}
+
+func TestEmulatorWriteAfterClose(t *testing.T) {
+	e, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("failed to create emulator: %v", err)
+	}
+
+	e.Close()
+
+	// Writing after close should error
+	_, err = e.Write([]byte("test"))
+	if err == nil {
+		// Depending on OS, the PTY may or may not error immediately.
+		// We just verify it doesn't panic.
+		t.Log("Write after close did not error (OS-dependent behavior)")
+	}
+}
+
+func TestEmulatorUniqueIDs(t *testing.T) {
+	e1, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("failed to create emulator 1: %v", err)
+	}
+	defer e1.Close()
+
+	e2, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("failed to create emulator 2: %v", err)
+	}
+	defer e2.Close()
+
+	if e1.ID() == e2.ID() {
+		t.Fatal("expected unique IDs for different emulators")
+	}
+}
+
+func TestSplitIntoRows(t *testing.T) {
+	tests := []struct {
+		name     string
+		rendered string
+		height   int
+		width    int
+		wantRows int
+	}{
+		{
+			name:     "empty input",
+			rendered: "",
+			height:   3,
+			width:    10,
+			wantRows: 3,
+		},
+		{
+			name:     "single line",
+			rendered: "hello",
+			height:   3,
+			width:    10,
+			wantRows: 3,
+		},
+		{
+			name:     "multiple lines",
+			rendered: "line1\nline2\nline3\n",
+			height:   5,
+			width:    10,
+			wantRows: 5,
+		},
+		{
+			name:     "more lines than height",
+			rendered: "a\nb\nc\nd\ne\n",
+			height:   3,
+			width:    5,
+			wantRows: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rows := splitIntoRows(tt.rendered, tt.height, tt.width)
+			if len(rows) != tt.wantRows {
+				t.Errorf("splitIntoRows() returned %d rows, want %d", len(rows), tt.wantRows)
+			}
+			// All rows should be non-empty (at least padded with spaces)
+			for i, row := range rows {
+				if row == "" {
+					t.Errorf("row %d is empty, expected at least padding", i)
+				}
+			}
+		})
+	}
+}
+
+func TestPadRow(t *testing.T) {
+	tests := []struct {
+		name  string
+		row   string
+		width int
+	}{
+		{
+			name:  "short row gets padded",
+			row:   "hi",
+			width: 10,
+		},
+		{
+			name:  "exact width row unchanged",
+			row:   "1234567890",
+			width: 10,
+		},
+		{
+			name:  "row with ANSI codes",
+			row:   "\x1b[31mred\x1b[0m",
+			width: 10,
+		},
+		{
+			name:  "empty row",
+			row:   "",
+			width: 5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := padRow(tt.row, tt.width)
+
+			// Count visible characters
+			visibleLen := 0
+			inEscape := false
+			for _, r := range result {
+				if r == '\033' {
+					inEscape = true
+				} else if inEscape {
+					if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || r == '~' {
+						inEscape = false
+					}
+				} else {
+					visibleLen++
+				}
+			}
+
+			if visibleLen < tt.width {
+				t.Errorf("padRow() visible length %d < width %d", visibleLen, tt.width)
+			}
+		})
+	}
+}
+
+func TestEmulatorResizeMarksDamage(t *testing.T) {
+	e, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("failed to create emulator: %v", err)
+	}
+	defer e.Close()
+
+	// Consume initial damage
+	_ = e.GetScreen()
+
+	// Resize should mark damage
+	err = e.Resize(40, 12)
+	if err != nil {
+		t.Fatalf("Resize failed: %v", err)
+	}
+
+	frame := e.GetScreen()
+	if len(frame.Damage) == 0 {
+		t.Fatal("expected damage after resize")
+	}
+}
+
+func TestEmulatorDirectWrite(t *testing.T) {
+	e, err := New(40, 10)
+	if err != nil {
+		t.Fatalf("failed to create emulator: %v", err)
+	}
+	defer e.Close()
+
+	// Write ANSI content directly to the VT emulator
+	e.mu.Lock()
+	e.vt.Write([]byte("Hello World"))
+	e.damaged = true
+	e.mu.Unlock()
+
+	frame := e.GetScreen()
+	combined := strings.Join(frame.Rows, "")
+	if !strings.Contains(combined, "Hello World") {
+		t.Errorf("expected screen to contain 'Hello World', got: %q", combined)
 	}
 }
 
