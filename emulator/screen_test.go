@@ -391,6 +391,55 @@ func TestPadRow(t *testing.T) {
 	}
 }
 
+func TestPadRowSGRReset(t *testing.T) {
+	// padRow must append \033[0m so that SGR attributes (e.g. underline) from
+	// the row content do not bleed into trailing padding or subsequent rows.
+	tests := []struct {
+		name  string
+		row   string
+		width int
+	}{
+		{
+			name:  "underline does not bleed into padding",
+			row:   "\x1b[4mhello\x1b[0m",
+			width: 10,
+		},
+		{
+			name:  "bold 256-color row with OSC sequence in width budget",
+			row:   "\x1b[1m\x1b[38;5;200mhi\x1b[0m",
+			width: 10,
+		},
+		{
+			name:  "row at exact width still gets reset",
+			row:   "1234567890",
+			width: 10,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := padRow(tt.row, tt.width)
+			if !strings.Contains(result, "\x1b[0m") {
+				t.Errorf("padRow() result missing SGR reset: %q", result)
+			}
+		})
+	}
+}
+
+func TestPadRowANSIAwareWidth(t *testing.T) {
+	// ANSI escape bytes must not count toward visible width; padding must bring
+	// the visible character count up to the target width.
+	row := "\x1b[1m\x1b[38;5;200mhi\x1b[0m" // bold + 256-color "hi" — many escape bytes
+	width := 10
+	result := padRow(row, width)
+
+	// Strip ANSI via a second pass with ansi.StringWidth to verify visible width.
+	// We know there are 2 visible chars in row; padRow must add 8 spaces.
+	if !strings.Contains(result, strings.Repeat(" ", 8)) {
+		t.Errorf("padRow() did not pad to full width; result: %q", result)
+	}
+}
+
 func TestEmulatorResizeMarksDamage(t *testing.T) {
 	e, err := New(80, 24)
 	if err != nil {

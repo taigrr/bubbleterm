@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 	"github.com/creack/pty"
 	"github.com/google/uuid"
@@ -224,28 +225,16 @@ func splitIntoRows(rendered string, height, width int) []string {
 	return rows
 }
 
-// padRow pads a row to the specified width, accounting for ANSI escape codes
+// padRow pads a row to the specified width, accounting for ANSI escape codes.
+// It always appends a SGR reset (\033[0m) before any trailing spaces so that
+// active attributes (e.g. underline, bold) from the row's content do not bleed
+// into the padding or into subsequent rows when rows are joined with \n.
 func padRow(row string, width int) string {
-	// Count visible characters (ignoring ANSI escape codes)
-	visibleLen := 0
-	inEscape := false
-	for _, r := range row {
-		if r == '\033' {
-			inEscape = true
-		} else if inEscape {
-			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || r == '~' {
-				inEscape = false
-			}
-		} else {
-			visibleLen++
-		}
+	const reset = "\033[0m"
+	if visibleLen := ansi.StringWidth(row); visibleLen < width {
+		return row + reset + strings.Repeat(" ", width-visibleLen)
 	}
-
-	// Pad with spaces if needed
-	if visibleLen < width {
-		return row + strings.Repeat(" ", width-visibleLen)
-	}
-	return row
+	return row + reset
 }
 
 // Cursor returns the current cursor position and whether the cursor is visible.
