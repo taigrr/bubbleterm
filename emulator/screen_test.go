@@ -1,6 +1,8 @@
 package emulator
 
 import (
+	"bytes"
+	"io"
 	"os/exec"
 	"strings"
 	"testing"
@@ -217,6 +219,29 @@ func TestEmulatorStartCommandOnPipe(t *testing.T) {
 	err = e.StartCommand(cmd)
 	if err == nil {
 		t.Fatal("expected error when calling StartCommand on pipe-based emulator")
+	}
+}
+
+func TestEmulatorPipeResponsesAreForwarded(t *testing.T) {
+	reader := strings.NewReader("\x1b[c")
+	writer := &captureWriteCloser{writes: make(chan []byte, 1)}
+
+	e, err := NewFromPipes(80, 24, reader, writer)
+	if err != nil {
+		t.Fatalf("failed to create pipe-based emulator: %v", err)
+	}
+	defer e.Close()
+
+	select {
+	case got := <-writer.writes:
+		if len(got) == 0 {
+			t.Fatal("expected terminal response bytes")
+		}
+		if !bytes.HasPrefix(got, []byte("\x1b[?")) || !bytes.HasSuffix(got, []byte("c")) {
+			t.Fatalf("expected device attributes response, got %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for terminal response")
 	}
 }
 
@@ -506,3 +531,24 @@ func (w *testWriter) Close() error {
 	w.closed = true
 	return nil
 }
+
+type captureWriteCloser struct {
+	writes chan []byte
+}
+
+func (w *captureWriteCloser) Write(p []byte) (n int, err error) {
+	buf := make([]byte, len(p))
+	copy(buf, p)
+	select {
+	case w.writes <- buf:
+	default:
+	}
+	return len(p), nil
+}
+
+func (w *captureWriteCloser) Close() error {
+	close(w.writes)
+	return nil
+}
+
+var _ io.WriteCloser = (*captureWriteCloser)(nil)
