@@ -422,9 +422,9 @@ func (e *Emulator) Close() error {
 		close(e.stopChan)
 
 		if e.isPipe {
-			if err := e.vt.Close(); err != nil {
-				closeErr = err
-			}
+			// Leave the vt emulator open here. Its Close method races with
+			// concurrent Read/Write calls, and the pipe/PTY closures are enough to
+			// stop the goroutines that feed it.
 			if e.writer != nil {
 				if err := e.writer.Close(); err != nil && closeErr == nil {
 					closeErr = err
@@ -443,9 +443,9 @@ func (e *Emulator) Close() error {
 				closeErr = err
 			}
 		}
-		if err := e.vt.Close(); err != nil && closeErr == nil {
-			closeErr = err
-		}
+		// Intentionally do not call e.vt.Close(); the upstream vt emulator does
+		// not synchronize Close with Read/Write, and we already stop further I/O
+		// by closing the pipe/PTY endpoints above.
 	})
 
 	return closeErr
