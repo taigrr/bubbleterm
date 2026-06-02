@@ -33,6 +33,8 @@ type Emulator struct {
 	writer io.WriteCloser
 	isPipe bool
 
+	closeOnce sync.Once
+
 	// Process tracking
 	cmd           *exec.Cmd
 	processExited bool
@@ -104,7 +106,9 @@ func NewFromPipes(cols, rows int, r io.Reader, w io.WriteCloser) (*Emulator, err
 		damaged:   true,
 	}
 
-	// Start the read loop using the provided reader
+	// Start the read loop using the provided reader and drain terminal
+	// responses (for queries like DA/DSR) back to the remote process.
+	go e.pipeResponseLoop()
 	go e.ptyReadLoop()
 
 	return e, nil
@@ -412,23 +416,54 @@ func (e *Emulator) SendMouse(button int, x, y int, pressed bool) error {
 
 // Close shuts down the emulator
 func (e *Emulator) Close() error {
-	close(e.stopChan)
+	var closeErr error
 
-	if e.isPipe {
-		if e.writer != nil {
-			e.writer.Close()
+	e.closeOnce.Do(func() {
+		close(e.stopChan)
+
+		if e.isPipe {
+			// Leave the vt emulator open here. Its Close method races with
+			// concurrent Read/Write calls, and the pipe/PTY closures are enough to
+			// stop the goroutines that feed it.
+			if e.writer != nil {
+				if err := e.writer.Close(); err != nil && closeErr == nil {
+					closeErr = err
+				}
+			}
+			return
 		}
-		return nil
-	}
 
-	if e.tty != nil {
-		e.tty.Close()
-	}
-	if e.pty != nil {
-		e.pty.Close()
-	}
+		if e.tty != nil {
+			if err := e.tty.Close(); err != nil && closeErr == nil {
+				closeErr = err
+			}
+		}
+		if e.pty != nil {
+			if err := e.pty.Close(); err != nil && closeErr == nil {
+				closeErr = err
+			}
+		}
+		// Intentionally do not call e.vt.Close(); the upstream vt emulator does
+		// not synchronize Close with Read/Write, and we already stop further I/O
+		// by closing the pipe/PTY endpoints above.
+	})
 
-	return e.vt.Close()
+	return closeErr
+}
+
+func (e *Emulator) pipeResponseLoop() {
+	buf := make([]byte, 4096)
+	for {
+		n, err := e.vt.Read(buf)
+		if n > 0 && e.writer != nil {
+			if _, writeErr := e.writer.Write(buf[:n]); writeErr != nil {
+				return
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
 }
 
 // ptyReadLoop reads from PTY/pipe and writes to the vt emulator
