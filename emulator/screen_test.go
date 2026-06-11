@@ -570,3 +570,43 @@ func (w *captureWriteCloser) Close() error {
 }
 
 var _ io.WriteCloser = (*captureWriteCloser)(nil)
+
+func TestSplitIntoRowsBasic(t *testing.T) {
+	rows := splitIntoRows("line1\nline2\nline3", 5, 10)
+	if len(rows) != 5 {
+		t.Fatalf("expected 5 rows, got %d", len(rows))
+	}
+	if !strings.Contains(rows[0], "line1") {
+		t.Errorf("row 0 = %q, want to contain 'line1'", rows[0])
+	}
+	if !strings.Contains(rows[1], "line2") {
+		t.Errorf("row 1 = %q, want to contain 'line2'", rows[1])
+	}
+	if !strings.Contains(rows[2], "line3") {
+		t.Errorf("row 2 = %q, want to contain 'line3'", rows[2])
+	}
+	// Remaining rows should be spaces
+	expected := strings.Repeat(" ", 10)
+	if rows[3] != expected {
+		t.Errorf("row 3 = %q, want %q", rows[3], expected)
+	}
+}
+
+func BenchmarkSplitIntoRows(b *testing.B) {
+	// Simulate a typical 80x24 terminal render with ANSI codes
+	var buf strings.Builder
+	for row := 0; row < 24; row++ {
+		buf.WriteString("\x1b[32m")
+		buf.WriteString(strings.Repeat("A", 80))
+		buf.WriteString("\x1b[0m")
+		if row < 23 {
+			buf.WriteByte('\n')
+		}
+	}
+	rendered := buf.String()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		splitIntoRows(rendered, 24, 80)
+	}
+}
