@@ -153,11 +153,16 @@ func (e *Emulator) resize(cols, rows int) error {
 	return nil
 }
 
-// SetFrameRate sets the internal render loop framerate
-func (e *Emulator) SetFrameRate(fps int) {
+// SetFrameRate sets the internal render loop framerate.
+// fps must be greater than 0.
+func (e *Emulator) SetFrameRate(fps int) error {
+	if fps < 1 {
+		return ErrInvalidFrameRate
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.frameRate = time.Second / time.Duration(fps)
+	return nil
 }
 
 // GetScreen returns the current rendered screen as ANSI strings.

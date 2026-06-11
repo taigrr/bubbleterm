@@ -2,6 +2,7 @@ package emulator
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os/exec"
 	"strings"
@@ -156,9 +157,26 @@ func TestEmulatorSetFrameRate(t *testing.T) {
 	}
 	defer e.Close()
 
-	// Should not panic
-	e.SetFrameRate(60)
-	e.SetFrameRate(1)
+	if err := e.SetFrameRate(60); err != nil {
+		t.Fatalf("SetFrameRate(60) returned error: %v", err)
+	}
+	if err := e.SetFrameRate(1); err != nil {
+		t.Fatalf("SetFrameRate(1) returned error: %v", err)
+	}
+}
+
+func TestSetFrameRateInvalidValues(t *testing.T) {
+	e, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("failed to create emulator: %v", err)
+	}
+	defer e.Close()
+
+	for _, fps := range []int{0, -1, -100} {
+		if err := e.SetFrameRate(fps); !errors.Is(err, ErrInvalidFrameRate) {
+			t.Errorf("SetFrameRate(%d) = %v, want ErrInvalidFrameRate", fps, err)
+		}
+	}
 }
 
 func TestEmulatorSetSize(t *testing.T) {
