@@ -79,6 +79,8 @@ func New(cols, rows int) (*Emulator, error) {
 	// Set initial size
 	err = e.resize(cols, rows)
 	if err != nil {
+		e.pty.Close()
+		e.tty.Close()
 		return nil, err
 	}
 
