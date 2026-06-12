@@ -342,6 +342,147 @@ func TestStartCommandCmdReturnsStartCommandMsg(t *testing.T) {
 	}
 }
 
+func TestModelUpdateKeyMsgSendsTranslatedInput(t *testing.T) {
+	pr, _ := io.Pipe()
+	ir, iw := io.Pipe()
+
+	model, err := NewWithPipes(80, 24, pr, iw)
+	if err != nil {
+		t.Fatalf("NewWithPipes failed: %v", err)
+	}
+	defer model.Close()
+
+	_, cmd := model.Update(testKeyMsg("enter"))
+	if cmd == nil {
+		t.Fatal("expected command for translated key input")
+	}
+
+	done := make(chan string, 1)
+	go func() {
+		buf := make([]byte, 8)
+		n, _ := ir.Read(buf)
+		done <- string(buf[:n])
+	}()
+
+	msg := cmd()
+	if msg != nil {
+		t.Fatalf("expected nil message for successful sendInput, got %T", msg)
+	}
+
+	select {
+	case got := <-done:
+		if got != "\r" {
+			t.Fatalf("expected carriage return, got %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for translated input")
+	}
+}
+
+func TestModelSendInputCmdWritesToPipe(t *testing.T) {
+	pr, _ := io.Pipe()
+	ir, iw := io.Pipe()
+
+	model, err := NewWithPipes(80, 24, pr, iw)
+	if err != nil {
+		t.Fatalf("NewWithPipes failed: %v", err)
+	}
+	defer model.Close()
+
+	done := make(chan string, 1)
+	go func() {
+		buf := make([]byte, 16)
+		n, _ := ir.Read(buf)
+		done <- string(buf[:n])
+	}()
+
+	msg := model.SendInput("hello")()
+	if msg != nil {
+		t.Fatalf("expected nil message for successful sendInput, got %T", msg)
+	}
+
+	select {
+	case got := <-done:
+		if got != "hello" {
+			t.Fatalf("expected %q, got %q", "hello", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for model SendInput output")
+	}
+}
+
+func TestModelUpdateMouseMsgReturnsSendCommand(t *testing.T) {
+	pr, _ := io.Pipe()
+	_, iw := io.Pipe()
+
+	model, err := NewWithPipes(80, 24, pr, iw)
+	if err != nil {
+		t.Fatalf("NewWithPipes failed: %v", err)
+	}
+	defer model.Close()
+
+	updated, cmd := model.Update(translatedMouseMsg{
+		EmulatorID:  model.GetEmulator().ID(),
+		OriginalMsg: tea.MouseMotionMsg{},
+		X:           4,
+		Y:           7,
+	})
+	if updated != model {
+		t.Fatal("expected Update to return same model pointer")
+	}
+	if cmd == nil {
+		t.Fatal("expected sendMouseEvent command")
+	}
+	if msg := cmd(); msg != nil {
+		t.Fatalf("expected nil message for successful mouse send, got %T", msg)
+	}
+}
+
+func TestModelUpdateTerminalOutputHonorsAutoPoll(t *testing.T) {
+	model, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer model.Close()
+	model.SetAutoPoll(false)
+
+	frame := emulator.EmittedFrame{
+		Rows:   []string{"updated"},
+		Damage: []emulator.LineDamage{{Row: 0, X1: 0, X2: 7, Reason: emulator.CRText}},
+	}
+
+	updated, cmd := model.Update(terminalOutputMsg{Frame: frame, EmulatorID: model.GetEmulator().ID()})
+	if updated != model {
+		t.Fatal("expected Update to return same model pointer")
+	}
+	if cmd != nil {
+		t.Fatal("expected no auto-poll command when auto-poll is disabled")
+	}
+	if got := model.View().Content; !strings.Contains(got, "updated") {
+		t.Fatalf("expected cached view to include updated frame, got %q", got)
+	}
+}
+
+func TestModelViewReturnsTerminalError(t *testing.T) {
+	model, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer model.Close()
+
+	expectedErr := exec.ErrNotFound
+	updated, cmd := model.Update(terminalErrorMsg{Err: expectedErr, EmulatorID: model.GetEmulator().ID()})
+	if updated != model {
+		t.Fatal("expected Update to return same model pointer")
+	}
+	if cmd != nil {
+		t.Fatal("expected no command for terminal error")
+	}
+	if got := model.View().Content; got != "Terminal error: executable file not found in $PATH" {
+		t.Fatalf("unexpected error view: %q", got)
+	}
+}
+
 func TestCloseNilEmulator(t *testing.T) {
 	model := &Model{}
 	if err := model.Close(); err != nil {
