@@ -61,7 +61,7 @@ func sendMouseEvent(emu *emulator.Emulator, x, y, button int, pressed bool) tea.
 // resizeTerminal resizes the terminal
 func resizeTerminal(emu *emulator.Emulator, width, height int) tea.Cmd {
 	return func() tea.Msg {
-		err := emu.Resize(width-2, height)
+		err := emu.Resize(width, height)
 		if err != nil {
 			return terminalErrorMsg{Err: err, EmulatorID: emu.ID()}
 		}

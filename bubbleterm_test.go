@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/taigrr/bubbleterm/emulator"
 )
 
@@ -282,6 +283,41 @@ func TestModelResizeUpdatesDimensions(t *testing.T) {
 	frame := model.GetEmulator().GetScreen()
 	if len(frame.Rows) != 12 {
 		t.Fatalf("expected 12 rows after resize, got %d", len(frame.Rows))
+	}
+}
+
+func TestResizeTerminalPassesFullWidth(t *testing.T) {
+	model, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer model.Close()
+
+	// Send a WindowSizeMsg through Update, which calls resizeTerminal.
+	// Before the fix, resizeTerminal subtracted 2 from width, so a
+	// 40-wide message would resize the emulator to 38.
+	_, cmd := model.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
+	if cmd == nil {
+		t.Fatal("expected resize command from WindowSizeMsg")
+	}
+
+	// Execute the command to apply the resize
+	msg := cmd()
+	if errMsg, ok := msg.(terminalErrorMsg); ok {
+		t.Fatalf("resize error: %v", errMsg.Err)
+	}
+
+	// The emulator should have the full width (40), not width-2 (38).
+	// GetScreen row count reflects the emulator's height, and each row
+	// is padded to the emulator's width using ansi.StringWidth.
+	frame := model.GetEmulator().GetScreen()
+	if len(frame.Rows) != 10 {
+		t.Fatalf("expected 10 rows, got %d", len(frame.Rows))
+	}
+	// Use ansi.StringWidth to measure visible width, ignoring ANSI codes
+	rowWidth := ansi.StringWidth(frame.Rows[0])
+	if rowWidth != 40 {
+		t.Fatalf("expected visible row width 40, got %d", rowWidth)
 	}
 }
 
