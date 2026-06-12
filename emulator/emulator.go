@@ -400,6 +400,20 @@ func (e *Emulator) SendMouse(button int, x, y int, pressed bool) error {
 	return nil
 }
 
+// SendMouseWheel sends a mouse wheel event to the terminal
+func (e *Emulator) SendMouseWheel(button int, x, y int) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.vt.SendMouse(vt.MouseWheel{
+		Button: vt.MouseButton(button),
+		X:      x,
+		Y:      y,
+	})
+
+	return nil
+}
+
 // Close shuts down the emulator
 func (e *Emulator) Close() error {
 	var closeErr error

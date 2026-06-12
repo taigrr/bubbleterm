@@ -58,6 +58,17 @@ func sendMouseEvent(emu *emulator.Emulator, x, y, button int, pressed bool) tea.
 	}
 }
 
+// sendMouseWheel sends a mouse wheel event to the terminal
+func sendMouseWheel(emu *emulator.Emulator, x, y, button int) tea.Cmd {
+	return func() tea.Msg {
+		err := emu.SendMouseWheel(button, x, y)
+		if err != nil {
+			return terminalErrorMsg{Err: err, EmulatorID: emu.ID()}
+		}
+		return nil
+	}
+}
+
 // resizeTerminal resizes the terminal
 func resizeTerminal(emu *emulator.Emulator, width, height int) tea.Cmd {
 	return func() tea.Msg {

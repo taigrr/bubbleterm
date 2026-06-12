@@ -136,6 +136,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Send mouse motion to terminal (button -1 indicates motion without button)
 		return m, sendMouseEvent(m.emulator, msg.Mouse().X, msg.Mouse().Y, -1, false)
 
+	case tea.MouseWheelMsg:
+		if !m.focused {
+			return m, nil
+		}
+		return m, sendMouseWheel(m.emulator, msg.Mouse().X, msg.Mouse().Y, int(msg.Mouse().Button))
+
 	case translatedMouseMsg:
 		if !m.focused {
 			return m, nil
@@ -151,6 +157,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, sendMouseEvent(m.emulator, msg.X, msg.Y, int(originalMsg.Mouse().Button), false)
 		case tea.MouseMotionMsg:
 			return m, sendMouseEvent(m.emulator, msg.X, msg.Y, -1, false)
+		case tea.MouseWheelMsg:
+			return m, sendMouseWheel(m.emulator, msg.X, msg.Y, int(originalMsg.Mouse().Button))
 		}
 
 	case tea.WindowSizeMsg:

@@ -497,6 +497,45 @@ func TestModelUpdateMouseMsgReturnsSendCommand(t *testing.T) {
 	}
 }
 
+func TestModelUpdateHandlesMouseWheelMsg(t *testing.T) {
+	pr, _ := io.Pipe()
+	_, iw := io.Pipe()
+
+	model, err := NewWithPipes(80, 24, pr, iw)
+	if err != nil {
+		t.Fatalf("NewWithPipes failed: %v", err)
+	}
+	defer model.Close()
+
+	// MouseWheelMsg should produce a command (not be silently dropped)
+	_, cmd := model.Update(tea.MouseWheelMsg{X: 5, Y: 5, Button: tea.MouseWheelUp})
+	if cmd == nil {
+		t.Fatal("expected a command from MouseWheelMsg, got nil")
+	}
+
+	_, cmd = model.Update(tea.MouseWheelMsg{X: 5, Y: 5, Button: tea.MouseWheelDown})
+	if cmd == nil {
+		t.Fatal("expected a command from MouseWheelMsg (down), got nil")
+	}
+}
+
+func TestModelUpdateIgnoresMouseWheelWhenBlurred(t *testing.T) {
+	pr, _ := io.Pipe()
+	_, iw := io.Pipe()
+
+	model, err := NewWithPipes(80, 24, pr, iw)
+	if err != nil {
+		t.Fatalf("NewWithPipes failed: %v", err)
+	}
+	defer model.Close()
+	model.Blur()
+
+	_, cmd := model.Update(tea.MouseWheelMsg{X: 5, Y: 5, Button: tea.MouseWheelUp})
+	if cmd != nil {
+		t.Fatal("expected no command when model is blurred")
+	}
+}
+
 func TestModelUpdateTranslatedMouseIgnoresWrongEmulatorAndUnknownMessage(t *testing.T) {
 	pr, _ := io.Pipe()
 	_, iw := io.Pipe()
@@ -520,6 +559,28 @@ func TestModelUpdateTranslatedMouseIgnoresWrongEmulatorAndUnknownMessage(t *test
 		if cmd != nil {
 			t.Fatalf("expected no command for translated mouse message %+v", msg)
 		}
+	}
+}
+
+func TestModelUpdateHandlesTranslatedMouseWheelMsg(t *testing.T) {
+	pr, _ := io.Pipe()
+	_, iw := io.Pipe()
+
+	model, err := NewWithPipes(80, 24, pr, iw)
+	if err != nil {
+		t.Fatalf("NewWithPipes failed: %v", err)
+	}
+	defer model.Close()
+
+	msg := translatedMouseMsg{
+		EmulatorID:  model.emulator.ID(),
+		X:           10,
+		Y:           10,
+		OriginalMsg: tea.MouseWheelMsg{X: 15, Y: 15, Button: tea.MouseWheelDown},
+	}
+	_, cmd := model.Update(msg)
+	if cmd == nil {
+		t.Fatal("expected a command from translated MouseWheelMsg, got nil")
 	}
 }
 
