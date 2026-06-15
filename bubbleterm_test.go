@@ -352,7 +352,7 @@ func TestModelUpdateKeyMsgSendsTranslatedInput(t *testing.T) {
 	}
 	defer model.Close()
 
-	_, cmd := model.Update(testKeyMsg("enter"))
+	_, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("expected command for translated key input")
 	}
