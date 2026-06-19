@@ -651,6 +651,57 @@ func TestModelViewReturnsTerminalError(t *testing.T) {
 	}
 }
 
+func TestPollTerminalBlocksUntilDamage(t *testing.T) {
+	pr, pw := io.Pipe()
+	_, iw := io.Pipe()
+
+	model, err := NewWithPipes(10, 5, pr, iw)
+	if err != nil {
+		t.Fatalf("NewWithPipes failed: %v", err)
+	}
+	defer model.Close()
+
+	// Consume initial damage so the emulator is in a clean state.
+	initMsg := model.Init()()
+	if _, ok := initMsg.(terminalOutputMsg); !ok {
+		t.Fatalf("expected terminalOutputMsg from Init, got %T", initMsg)
+	}
+
+	// Start polling — should block because no new data has arrived.
+	cmd := pollTerminal(model.emulator)
+	done := make(chan tea.Msg, 1)
+	go func() { done <- cmd() }()
+
+	select {
+	case msg := <-done:
+		t.Fatalf("pollTerminal returned without new data: %T", msg)
+	case <-time.After(50 * time.Millisecond):
+		// Expected: still blocking.
+	}
+
+	// Write data through the pipe to trigger damage.
+	if _, err := pw.Write([]byte("hello")); err != nil {
+		t.Fatalf("pipe write failed: %v", err)
+	}
+
+	select {
+	case msg := <-done:
+		outputMsg, ok := msg.(terminalOutputMsg)
+		if !ok {
+			t.Fatalf("expected terminalOutputMsg, got %T", msg)
+		}
+		if len(outputMsg.Frame.Damage) == 0 {
+			t.Fatal("expected damage in returned frame")
+		}
+		combined := strings.Join(outputMsg.Frame.Rows, "")
+		if !strings.Contains(combined, "hello") {
+			t.Errorf("expected 'hello' in frame rows, got: %q", combined)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("pollTerminal did not return after data was written")
+	}
+}
+
 func TestCloseNilEmulator(t *testing.T) {
 	model := &Model{}
 	if err := model.Close(); err != nil {

@@ -173,18 +173,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.EmulatorID != m.emulator.ID() {
 			return m, nil // Ignore messages from other emulators
 		}
-		// Skip rerender if nothing changed
 		if len(msg.Frame.Damage) == 0 {
 			if m.autoPoll {
 				return m, pollTerminal(m.emulator)
 			}
 			return m, nil
 		}
-		// Update the frame with new terminal output
 		m.frame = msg.Frame
-		// Cache the rendered view for fast access
 		m.cachedView = strings.Join(m.frame.Rows, "\n")
-		// Don't immediately poll again - let the tick handle regular polling
 		if m.autoPoll {
 			return m, pollTerminal(m.emulator)
 		}

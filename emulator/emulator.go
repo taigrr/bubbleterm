@@ -46,6 +46,7 @@ type Emulator struct {
 
 	// Damage tracking for change detection
 	lastRender string
+	lastRows   []string
 	damaged    bool
 
 	// Screen dimensions
@@ -167,19 +168,22 @@ func (e *Emulator) SetFrameRate(fps int) error {
 
 // GetScreen returns the current rendered screen as ANSI strings.
 // It also returns damage information about which lines changed since
-// the last call.
+// the last call. When nothing has changed since the last call, it
+// returns cached rows with empty Damage.
 func (e *Emulator) GetScreen() EmittedFrame {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	// Render the current screen
+	if !e.damaged {
+		return EmittedFrame{Rows: e.lastRows}
+	}
+
 	rendered := e.vt.Render()
+	e.damaged = false
 
 	// Check for changes
 	var damage []LineDamage
-	if rendered != e.lastRender || e.damaged {
-		// Mark all lines as damaged for simplicity
-		// (the vt package tracks touched lines but we simplify here)
+	if rendered != e.lastRender {
 		for y := 0; y < e.height; y++ {
 			damage = append(damage, LineDamage{
 				Row:    y,
@@ -189,12 +193,10 @@ func (e *Emulator) GetScreen() EmittedFrame {
 			})
 		}
 		e.lastRender = rendered
-		e.damaged = false
 	}
 
-	// Split rendered output into rows
 	rows := splitIntoRows(rendered, e.height, e.width)
-
+	e.lastRows = rows
 	return EmittedFrame{Rows: rows, Damage: damage}
 }
 
