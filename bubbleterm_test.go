@@ -134,6 +134,26 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestNewWithCommandStartsProcess(t *testing.T) {
+	model, err := NewWithCommand(80, 24, exec.Command("sh", "-c", "printf 'started via command'"))
+	if err != nil {
+		t.Fatalf("NewWithCommand failed: %v", err)
+	}
+	defer model.Close()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		frame := model.GetEmulator().GetScreen()
+		if strings.Contains(strings.Join(frame.Rows, "\n"), "started via command") {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	frame := model.GetEmulator().GetScreen()
+	t.Fatalf("expected started command output, got %q", strings.Join(frame.Rows, "\n"))
+}
+
 func TestModelFocusAndBlur(t *testing.T) {
 	model, err := New(80, 24)
 	if err != nil {
@@ -234,6 +254,29 @@ func TestModelUpdateProcessesTerminalOutputAndView(t *testing.T) {
 	}
 }
 
+func TestModelUpdateSkipsUndamagedFrameWithoutMutatingView(t *testing.T) {
+	model, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer model.Close()
+
+	initialView := model.View().Content
+	updated, cmd := model.Update(terminalOutputMsg{
+		EmulatorID: model.GetEmulator().ID(),
+		Frame:      emulator.EmittedFrame{Rows: []string{"ignored"}},
+	})
+	if updated != model {
+		t.Fatal("expected Update to return same model pointer")
+	}
+	if cmd == nil {
+		t.Fatal("expected follow-up poll command for undamaged frame when auto-poll is enabled")
+	}
+	if got := model.View().Content; got != initialView {
+		t.Fatalf("expected view to stay unchanged, got %q", got)
+	}
+}
+
 func TestModelUpdateIgnoresMessagesFromOtherEmulator(t *testing.T) {
 	model, err := New(80, 24)
 	if err != nil {
@@ -318,6 +361,22 @@ func TestResizeTerminalPassesFullWidth(t *testing.T) {
 	rowWidth := ansi.StringWidth(frame.Rows[0])
 	if rowWidth != 40 {
 		t.Fatalf("expected visible row width 40, got %d", rowWidth)
+	}
+}
+
+func TestModelUpdateWindowSizeNoopWhenUnchanged(t *testing.T) {
+	model, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer model.Close()
+
+	updated, cmd := model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	if updated != model {
+		t.Fatal("expected Update to return same model pointer")
+	}
+	if cmd != nil {
+		t.Fatal("expected no resize command when size is unchanged")
 	}
 }
 
@@ -435,6 +494,54 @@ func TestModelUpdateMouseMsgReturnsSendCommand(t *testing.T) {
 	}
 	if msg := cmd(); msg != nil {
 		t.Fatalf("expected nil message for successful mouse send, got %T", msg)
+	}
+}
+
+func TestModelUpdateTranslatedMouseIgnoresWrongEmulatorAndUnknownMessage(t *testing.T) {
+	pr, _ := io.Pipe()
+	_, iw := io.Pipe()
+
+	model, err := NewWithPipes(80, 24, pr, iw)
+	if err != nil {
+		t.Fatalf("NewWithPipes failed: %v", err)
+	}
+	defer model.Close()
+
+	cases := []translatedMouseMsg{
+		{EmulatorID: "someone-else", OriginalMsg: tea.MouseMotionMsg{}, X: 1, Y: 2},
+		{EmulatorID: model.GetEmulator().ID(), OriginalMsg: tea.WindowSizeMsg{}, X: 1, Y: 2},
+	}
+
+	for _, msg := range cases {
+		updated, cmd := model.Update(msg)
+		if updated != model {
+			t.Fatal("expected Update to return same model pointer")
+		}
+		if cmd != nil {
+			t.Fatalf("expected no command for translated mouse message %+v", msg)
+		}
+	}
+}
+
+func TestModelUpdateTerminalReturnsPollCommand(t *testing.T) {
+	model, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer model.Close()
+
+	cmd := model.UpdateTerminal()
+	if cmd == nil {
+		t.Fatal("expected poll command from UpdateTerminal")
+	}
+
+	msg := cmd()
+	outputMsg, ok := msg.(terminalOutputMsg)
+	if !ok {
+		t.Fatalf("expected terminalOutputMsg, got %T", msg)
+	}
+	if outputMsg.EmulatorID != model.GetEmulator().ID() {
+		t.Fatalf("expected emulator ID %q, got %q", model.GetEmulator().ID(), outputMsg.EmulatorID)
 	}
 }
 
