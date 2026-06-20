@@ -81,7 +81,6 @@ func NewWithPipes(width, height int, r io.Reader, w io.WriteCloser) (*Model, err
 
 // NewWithCommand creates a new terminal bubble and starts the specified command
 func NewWithCommand(width, height int, cmd *exec.Cmd) (*Model, error) {
-	// we need at least 2 columns for
 	model, err := New(width, height)
 	if err != nil {
 		return nil, err

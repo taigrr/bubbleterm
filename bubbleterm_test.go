@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/taigrr/bubbleterm/emulator"
 )
 
@@ -75,59 +76,50 @@ func TestNewWithPipes_SendInput(t *testing.T) {
 func TestKeyToTerminalInput(t *testing.T) {
 	tests := []struct {
 		name     string
-		key      string
+		msg      tea.KeyPressMsg
 		expected string
 	}{
-		{"enter", "enter", "\r"},
-		{"tab", "tab", "\t"},
-		{"backspace", "backspace", "\x7f"},
-		{"delete", "delete", "\x1b[3~"},
-		{"escape", "esc", "\x1b"},
-		{"space", " ", " "},
-		{"up", "up", "\x1b[A"},
-		{"down", "down", "\x1b[B"},
-		{"right", "right", "\x1b[C"},
-		{"left", "left", "\x1b[D"},
-		{"home", "home", "\x1b[H"},
-		{"end", "end", "\x1b[F"},
-		{"pageup", "pageup", "\x1b[5~"},
-		{"pagedown", "pagedown", "\x1b[6~"},
-		{"insert", "insert", "\x1b[2~"},
-		{"ctrl+a", "ctrl+a", "\x01"},
-		{"ctrl+c", "ctrl+c", "\x03"},
-		{"ctrl+d", "ctrl+d", "\x04"},
-		{"ctrl+e", "ctrl+e", "\x05"},
-		{"ctrl+k", "ctrl+k", "\x0b"},
-		{"ctrl+l", "ctrl+l", "\x0c"},
-		{"ctrl+r", "ctrl+r", "\x12"},
-		{"ctrl+u", "ctrl+u", "\x15"},
-		{"ctrl+w", "ctrl+w", "\x17"},
-		{"ctrl+z", "ctrl+z", "\x1a"},
-		{"f1", "f1", "\x1bOP"},
-		{"f12", "f12", "\x1b[24~"},
-		{"letter a", "a", "a"},
-		{"letter z", "z", "z"},
-		{"digit 5", "5", "5"},
+		{"enter", tea.KeyPressMsg{Code: tea.KeyEnter}, "\r"},
+		{"tab", tea.KeyPressMsg{Code: tea.KeyTab}, "\t"},
+		{"backspace", tea.KeyPressMsg{Code: tea.KeyBackspace}, "\x7f"},
+		{"delete", tea.KeyPressMsg{Code: tea.KeyDelete}, "\x1b[3~"},
+		{"escape", tea.KeyPressMsg{Code: tea.KeyEscape}, "\x1b"},
+		{"space", tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}, " "},
+		{"up", tea.KeyPressMsg{Code: tea.KeyUp}, "\x1b[A"},
+		{"down", tea.KeyPressMsg{Code: tea.KeyDown}, "\x1b[B"},
+		{"right", tea.KeyPressMsg{Code: tea.KeyRight}, "\x1b[C"},
+		{"left", tea.KeyPressMsg{Code: tea.KeyLeft}, "\x1b[D"},
+		{"home", tea.KeyPressMsg{Code: tea.KeyHome}, "\x1b[H"},
+		{"end", tea.KeyPressMsg{Code: tea.KeyEnd}, "\x1b[F"},
+		{"pageup", tea.KeyPressMsg{Code: tea.KeyPgUp}, "\x1b[5~"},
+		{"pagedown", tea.KeyPressMsg{Code: tea.KeyPgDown}, "\x1b[6~"},
+		{"insert", tea.KeyPressMsg{Code: tea.KeyInsert}, "\x1b[2~"},
+		{"ctrl+a", tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl}, "\x01"},
+		{"ctrl+c", tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}, "\x03"},
+		{"ctrl+d", tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}, "\x04"},
+		{"ctrl+e", tea.KeyPressMsg{Code: 'e', Mod: tea.ModCtrl}, "\x05"},
+		{"ctrl+k", tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl}, "\x0b"},
+		{"ctrl+l", tea.KeyPressMsg{Code: 'l', Mod: tea.ModCtrl}, "\x0c"},
+		{"ctrl+r", tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl}, "\x12"},
+		{"ctrl+u", tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl}, "\x15"},
+		{"ctrl+w", tea.KeyPressMsg{Code: 'w', Mod: tea.ModCtrl}, "\x17"},
+		{"ctrl+z", tea.KeyPressMsg{Code: 'z', Mod: tea.ModCtrl}, "\x1a"},
+		{"f1", tea.KeyPressMsg{Code: tea.KeyF1}, "\x1bOP"},
+		{"f12", tea.KeyPressMsg{Code: tea.KeyF12}, "\x1b[24~"},
+		{"letter a", tea.KeyPressMsg{Code: 'a', Text: "a"}, "a"},
+		{"letter z", tea.KeyPressMsg{Code: 'z', Text: "z"}, "z"},
+		{"digit 5", tea.KeyPressMsg{Code: '5', Text: "5"}, "5"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a minimal KeyMsg using bubbletea's parser
-			// We test the string-based matching directly
-			msg := testKeyMsg(tt.key)
-			got := keyToTerminalInput(msg)
+			got := keyToTerminalInput(tt.msg)
 			if got != tt.expected {
-				t.Errorf("keyToTerminalInput(%q) = %q, want %q", tt.key, got, tt.expected)
+				t.Errorf("keyToTerminalInput(%q) = %q, want %q", tt.msg.String(), got, tt.expected)
 			}
 		})
 	}
 }
-
-// testKeyMsg creates a tea.KeyMsg that returns the given string from String()
-type testKeyMsg string
-
-func (k testKeyMsg) String() string { return string(k) }
-func (k testKeyMsg) Key() tea.Key   { return tea.Key{} }
 
 func TestNew(t *testing.T) {
 	model, err := New(80, 24)
@@ -195,7 +187,7 @@ func TestModelUpdateIgnoresKeyboardWhenBlurred(t *testing.T) {
 	defer model.Close()
 	model.Blur()
 
-	updated, cmd := model.Update(testKeyMsg("a"))
+	updated, cmd := model.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	if updated != model {
 		t.Fatal("expected Update to return same model pointer")
 	}
@@ -291,6 +283,41 @@ func TestModelResizeUpdatesDimensions(t *testing.T) {
 	frame := model.GetEmulator().GetScreen()
 	if len(frame.Rows) != 12 {
 		t.Fatalf("expected 12 rows after resize, got %d", len(frame.Rows))
+	}
+}
+
+func TestResizeTerminalPassesFullWidth(t *testing.T) {
+	model, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer model.Close()
+
+	// Send a WindowSizeMsg through Update, which calls resizeTerminal.
+	// Before the fix, resizeTerminal subtracted 2 from width, so a
+	// 40-wide message would resize the emulator to 38.
+	_, cmd := model.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
+	if cmd == nil {
+		t.Fatal("expected resize command from WindowSizeMsg")
+	}
+
+	// Execute the command to apply the resize
+	msg := cmd()
+	if errMsg, ok := msg.(terminalErrorMsg); ok {
+		t.Fatalf("resize error: %v", errMsg.Err)
+	}
+
+	// The emulator should have the full width (40), not width-2 (38).
+	// GetScreen row count reflects the emulator's height, and each row
+	// is padded to the emulator's width using ansi.StringWidth.
+	frame := model.GetEmulator().GetScreen()
+	if len(frame.Rows) != 10 {
+		t.Fatalf("expected 10 rows, got %d", len(frame.Rows))
+	}
+	// Use ansi.StringWidth to measure visible width, ignoring ANSI codes
+	rowWidth := ansi.StringWidth(frame.Rows[0])
+	if rowWidth != 40 {
+		t.Fatalf("expected visible row width 40, got %d", rowWidth)
 	}
 }
 
