@@ -18,7 +18,7 @@ func keyToTerminalInput(msg tea.KeyMsg) string {
 		return "\x1b[3~"
 	case "esc":
 		return "\x1b"
-	case " ":
+	case "space":
 		return " "
 	case "up":
 		return "\x1b[A"
@@ -32,9 +32,9 @@ func keyToTerminalInput(msg tea.KeyMsg) string {
 		return "\x1b[H"
 	case "end":
 		return "\x1b[F"
-	case "pageup":
+	case "pgup":
 		return "\x1b[5~"
-	case "pagedown":
+	case "pgdown":
 		return "\x1b[6~"
 	case "insert":
 		return "\x1b[2~"
