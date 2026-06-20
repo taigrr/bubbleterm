@@ -79,6 +79,8 @@ func New(cols, rows int) (*Emulator, error) {
 	// Set initial size
 	err = e.resize(cols, rows)
 	if err != nil {
+		e.pty.Close()
+		e.tty.Close()
 		return nil, err
 	}
 
@@ -151,11 +153,16 @@ func (e *Emulator) resize(cols, rows int) error {
 	return nil
 }
 
-// SetFrameRate sets the internal render loop framerate
-func (e *Emulator) SetFrameRate(fps int) {
+// SetFrameRate sets the internal render loop framerate.
+// fps must be greater than 0.
+func (e *Emulator) SetFrameRate(fps int) error {
+	if fps < 1 {
+		return ErrInvalidFrameRate
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.frameRate = time.Second / time.Duration(fps)
+	return nil
 }
 
 // GetScreen returns the current rendered screen as ANSI strings.
@@ -194,34 +201,13 @@ func (e *Emulator) GetScreen() EmittedFrame {
 // splitIntoRows splits the rendered output into individual rows and pads to width
 func splitIntoRows(rendered string, height, width int) []string {
 	rows := make([]string, height)
-
-	// The vt.Render() returns a string with ANSI codes
-	// We need to split it by newlines while preserving ANSI codes
-	currentRow := 0
-	var currentLine string
-
-	for _, r := range rendered {
-		if r == '\n' {
-			if currentRow < height {
-				rows[currentRow] = padRow(currentLine, width)
-				currentRow++
-			}
-			currentLine = ""
-		} else {
-			currentLine += string(r)
-		}
-	}
-
-	// Handle last line if no trailing newline
-	if currentRow < height && currentLine != "" {
-		rows[currentRow] = padRow(currentLine, width)
-		currentRow++
-	}
-
-	// Fill remaining rows with spaces
+	lines := strings.Split(rendered, "\n")
 	emptyRow := strings.Repeat(" ", width)
-	for i := currentRow; i < height; i++ {
-		if rows[i] == "" {
+
+	for i := 0; i < height; i++ {
+		if i < len(lines) && lines[i] != "" {
+			rows[i] = padRow(lines[i], width)
+		} else {
 			rows[i] = emptyRow
 		}
 	}
