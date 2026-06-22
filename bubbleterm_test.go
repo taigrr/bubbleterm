@@ -79,36 +79,140 @@ func TestKeyToTerminalInput(t *testing.T) {
 		msg      tea.KeyPressMsg
 		expected string
 	}{
+		// Basic special keys
 		{"enter", tea.KeyPressMsg{Code: tea.KeyEnter}, "\r"},
 		{"tab", tea.KeyPressMsg{Code: tea.KeyTab}, "\t"},
 		{"backspace", tea.KeyPressMsg{Code: tea.KeyBackspace}, "\x7f"},
 		{"delete", tea.KeyPressMsg{Code: tea.KeyDelete}, "\x1b[3~"},
 		{"escape", tea.KeyPressMsg{Code: tea.KeyEscape}, "\x1b"},
 		{"space", tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}, " "},
+
+		// Arrow keys
 		{"up", tea.KeyPressMsg{Code: tea.KeyUp}, "\x1b[A"},
 		{"down", tea.KeyPressMsg{Code: tea.KeyDown}, "\x1b[B"},
 		{"right", tea.KeyPressMsg{Code: tea.KeyRight}, "\x1b[C"},
 		{"left", tea.KeyPressMsg{Code: tea.KeyLeft}, "\x1b[D"},
+
+		// Navigation
 		{"home", tea.KeyPressMsg{Code: tea.KeyHome}, "\x1b[H"},
 		{"end", tea.KeyPressMsg{Code: tea.KeyEnd}, "\x1b[F"},
 		{"pageup", tea.KeyPressMsg{Code: tea.KeyPgUp}, "\x1b[5~"},
 		{"pagedown", tea.KeyPressMsg{Code: tea.KeyPgDown}, "\x1b[6~"},
 		{"insert", tea.KeyPressMsg{Code: tea.KeyInsert}, "\x1b[2~"},
+
+		// Ctrl+letter (all 26)
 		{"ctrl+a", tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl}, "\x01"},
+		{"ctrl+b", tea.KeyPressMsg{Code: 'b', Mod: tea.ModCtrl}, "\x02"},
 		{"ctrl+c", tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}, "\x03"},
 		{"ctrl+d", tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}, "\x04"},
 		{"ctrl+e", tea.KeyPressMsg{Code: 'e', Mod: tea.ModCtrl}, "\x05"},
+		{"ctrl+f", tea.KeyPressMsg{Code: 'f', Mod: tea.ModCtrl}, "\x06"},
+		{"ctrl+g", tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl}, "\x07"},
+		{"ctrl+h", tea.KeyPressMsg{Code: 'h', Mod: tea.ModCtrl}, "\x08"},
+		{"ctrl+i", tea.KeyPressMsg{Code: 'i', Mod: tea.ModCtrl}, "\x09"},
+		{"ctrl+j", tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl}, "\x0a"},
 		{"ctrl+k", tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl}, "\x0b"},
 		{"ctrl+l", tea.KeyPressMsg{Code: 'l', Mod: tea.ModCtrl}, "\x0c"},
+		{"ctrl+m", tea.KeyPressMsg{Code: 'm', Mod: tea.ModCtrl}, "\x0d"},
+		{"ctrl+n", tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl}, "\x0e"},
+		{"ctrl+o", tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl}, "\x0f"},
+		{"ctrl+p", tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl}, "\x10"},
+		{"ctrl+q", tea.KeyPressMsg{Code: 'q', Mod: tea.ModCtrl}, "\x11"},
 		{"ctrl+r", tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl}, "\x12"},
+		{"ctrl+s", tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}, "\x13"},
+		{"ctrl+t", tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl}, "\x14"},
 		{"ctrl+u", tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl}, "\x15"},
+		{"ctrl+v", tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl}, "\x16"},
 		{"ctrl+w", tea.KeyPressMsg{Code: 'w', Mod: tea.ModCtrl}, "\x17"},
+		{"ctrl+x", tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl}, "\x18"},
+		{"ctrl+y", tea.KeyPressMsg{Code: 'y', Mod: tea.ModCtrl}, "\x19"},
 		{"ctrl+z", tea.KeyPressMsg{Code: 'z', Mod: tea.ModCtrl}, "\x1a"},
+
+		// Ctrl+symbol
+		{"ctrl+@", tea.KeyPressMsg{Code: '@', Mod: tea.ModCtrl}, "\x00"},
+		{"ctrl+[", tea.KeyPressMsg{Code: '[', Mod: tea.ModCtrl}, "\x1b"},
+		{"ctrl+\\", tea.KeyPressMsg{Code: '\\', Mod: tea.ModCtrl}, "\x1c"},
+		{"ctrl+]", tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl}, "\x1d"},
+		{"ctrl+^", tea.KeyPressMsg{Code: '^', Mod: tea.ModCtrl}, "\x1e"},
+		{"ctrl+_", tea.KeyPressMsg{Code: '_', Mod: tea.ModCtrl}, "\x1f"},
+
+		// Function keys
 		{"f1", tea.KeyPressMsg{Code: tea.KeyF1}, "\x1bOP"},
+		{"f2", tea.KeyPressMsg{Code: tea.KeyF2}, "\x1bOQ"},
+		{"f3", tea.KeyPressMsg{Code: tea.KeyF3}, "\x1bOR"},
+		{"f4", tea.KeyPressMsg{Code: tea.KeyF4}, "\x1bOS"},
+		{"f5", tea.KeyPressMsg{Code: tea.KeyF5}, "\x1b[15~"},
+		{"f6", tea.KeyPressMsg{Code: tea.KeyF6}, "\x1b[17~"},
+		{"f7", tea.KeyPressMsg{Code: tea.KeyF7}, "\x1b[18~"},
+		{"f8", tea.KeyPressMsg{Code: tea.KeyF8}, "\x1b[19~"},
+		{"f9", tea.KeyPressMsg{Code: tea.KeyF9}, "\x1b[20~"},
+		{"f10", tea.KeyPressMsg{Code: tea.KeyF10}, "\x1b[21~"},
+		{"f11", tea.KeyPressMsg{Code: tea.KeyF11}, "\x1b[23~"},
 		{"f12", tea.KeyPressMsg{Code: tea.KeyF12}, "\x1b[24~"},
+
+		// Printable characters
 		{"letter a", tea.KeyPressMsg{Code: 'a', Text: "a"}, "a"},
 		{"letter z", tea.KeyPressMsg{Code: 'z', Text: "z"}, "z"},
 		{"digit 5", tea.KeyPressMsg{Code: '5', Text: "5"}, "5"},
+
+		// Modified enter (previously dropped)
+		{"shift+enter", tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift}, "\x0a"},
+		{"ctrl+enter", tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModCtrl}, "\x0a"},
+		{"alt+enter", tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModAlt}, "\x1b\x0a"},
+
+		// Modified tab
+		{"shift+tab", tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}, "\x1b[Z"},
+
+		// Modified backspace
+		{"alt+backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModAlt}, "\x1b\x7f"},
+		{"ctrl+backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModCtrl}, "\x08"},
+
+		// Modified arrows (xterm modifier parameter encoding)
+		{"shift+up", tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModShift}, "\x1b[1;2A"},
+		{"alt+up", tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModAlt}, "\x1b[1;3A"},
+		{"ctrl+up", tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModCtrl}, "\x1b[1;5A"},
+		{"ctrl+shift+up", tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModCtrl | tea.ModShift}, "\x1b[1;6A"},
+		{"shift+right", tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift}, "\x1b[1;2C"},
+		{"ctrl+left", tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModCtrl}, "\x1b[1;5D"},
+		{"shift+home", tea.KeyPressMsg{Code: tea.KeyHome, Mod: tea.ModShift}, "\x1b[1;2H"},
+		{"shift+end", tea.KeyPressMsg{Code: tea.KeyEnd, Mod: tea.ModShift}, "\x1b[1;2F"},
+
+		// Modified tilde keys
+		{"shift+delete", tea.KeyPressMsg{Code: tea.KeyDelete, Mod: tea.ModShift}, "\x1b[3;2~"},
+		{"ctrl+pgup", tea.KeyPressMsg{Code: tea.KeyPgUp, Mod: tea.ModCtrl}, "\x1b[5;5~"},
+
+		// Modified function keys
+		{"shift+f1", tea.KeyPressMsg{Code: tea.KeyF1, Mod: tea.ModShift}, "\x1b[1;2P"},
+		{"ctrl+f5", tea.KeyPressMsg{Code: tea.KeyF5, Mod: tea.ModCtrl}, "\x1b[15;5~"},
+
+		// Alt+letter (with Text set by parser)
+		{"alt+a", tea.KeyPressMsg{Code: 'a', Text: "a", Mod: tea.ModAlt}, "\x1ba"},
+		{"alt+z", tea.KeyPressMsg{Code: 'z', Text: "z", Mod: tea.ModAlt}, "\x1bz"},
+
+		// Alt+letter (without Text, fallback path)
+		{"alt+a no text", tea.KeyPressMsg{Code: 'a', Mod: tea.ModAlt}, "\x1ba"},
+
+		// Ctrl+alt+letter
+		{"ctrl+alt+a", tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl | tea.ModAlt}, "\x1b\x01"},
+		{"ctrl+alt+c", tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl | tea.ModAlt}, "\x1b\x03"},
+
+		// Ctrl+space
+		{"ctrl+space", tea.KeyPressMsg{Code: tea.KeySpace, Mod: tea.ModCtrl}, "\x00"},
+
+		// Ctrl+alt+space
+		{"ctrl+alt+space", tea.KeyPressMsg{Code: tea.KeySpace, Mod: tea.ModCtrl | tea.ModAlt}, "\x1b\x00"},
+
+		// Alt+space
+		{"alt+space", tea.KeyPressMsg{Code: tea.KeySpace, Mod: tea.ModAlt}, "\x1b "},
+
+		// Shift+letter producing uppercase via Text field
+		{"shift+a", tea.KeyPressMsg{Code: 'a', Text: "A", Mod: tea.ModShift}, "A"},
+
+		// Modified tab
+		{"alt+tab", tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModAlt}, "\t"},
+
+		// Unknown key returns empty string
+		{"unknown key", tea.KeyPressMsg{Code: tea.KeyF13}, ""},
 	}
 
 	for _, tt := range tests {
