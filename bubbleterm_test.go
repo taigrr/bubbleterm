@@ -601,6 +601,45 @@ func TestModelUpdateMouseMsgReturnsSendCommand(t *testing.T) {
 	}
 }
 
+func TestModelUpdateHandlesMouseWheelMsg(t *testing.T) {
+	pr, _ := io.Pipe()
+	_, iw := io.Pipe()
+
+	model, err := NewWithPipes(80, 24, pr, iw)
+	if err != nil {
+		t.Fatalf("NewWithPipes failed: %v", err)
+	}
+	defer model.Close()
+
+	// MouseWheelMsg should produce a command (not be silently dropped)
+	_, cmd := model.Update(tea.MouseWheelMsg{X: 5, Y: 5, Button: tea.MouseWheelUp})
+	if cmd == nil {
+		t.Fatal("expected a command from MouseWheelMsg, got nil")
+	}
+
+	_, cmd = model.Update(tea.MouseWheelMsg{X: 5, Y: 5, Button: tea.MouseWheelDown})
+	if cmd == nil {
+		t.Fatal("expected a command from MouseWheelMsg (down), got nil")
+	}
+}
+
+func TestModelUpdateIgnoresMouseWheelWhenBlurred(t *testing.T) {
+	pr, _ := io.Pipe()
+	_, iw := io.Pipe()
+
+	model, err := NewWithPipes(80, 24, pr, iw)
+	if err != nil {
+		t.Fatalf("NewWithPipes failed: %v", err)
+	}
+	defer model.Close()
+	model.Blur()
+
+	_, cmd := model.Update(tea.MouseWheelMsg{X: 5, Y: 5, Button: tea.MouseWheelUp})
+	if cmd != nil {
+		t.Fatal("expected no command when model is blurred")
+	}
+}
+
 func TestModelUpdateTranslatedMouseIgnoresWrongEmulatorAndUnknownMessage(t *testing.T) {
 	pr, _ := io.Pipe()
 	_, iw := io.Pipe()
@@ -624,6 +663,28 @@ func TestModelUpdateTranslatedMouseIgnoresWrongEmulatorAndUnknownMessage(t *test
 		if cmd != nil {
 			t.Fatalf("expected no command for translated mouse message %+v", msg)
 		}
+	}
+}
+
+func TestModelUpdateHandlesTranslatedMouseWheelMsg(t *testing.T) {
+	pr, _ := io.Pipe()
+	_, iw := io.Pipe()
+
+	model, err := NewWithPipes(80, 24, pr, iw)
+	if err != nil {
+		t.Fatalf("NewWithPipes failed: %v", err)
+	}
+	defer model.Close()
+
+	msg := translatedMouseMsg{
+		EmulatorID:  model.emulator.ID(),
+		X:           10,
+		Y:           10,
+		OriginalMsg: tea.MouseWheelMsg{X: 15, Y: 15, Button: tea.MouseWheelDown},
+	}
+	_, cmd := model.Update(msg)
+	if cmd == nil {
+		t.Fatal("expected a command from translated MouseWheelMsg, got nil")
 	}
 }
 
@@ -691,6 +752,57 @@ func TestModelViewReturnsTerminalError(t *testing.T) {
 	}
 	if got := model.View().Content; got != "Terminal error: executable file not found in $PATH" {
 		t.Fatalf("unexpected error view: %q", got)
+	}
+}
+
+func TestPollTerminalBlocksUntilDamage(t *testing.T) {
+	pr, pw := io.Pipe()
+	_, iw := io.Pipe()
+
+	model, err := NewWithPipes(10, 5, pr, iw)
+	if err != nil {
+		t.Fatalf("NewWithPipes failed: %v", err)
+	}
+	defer model.Close()
+
+	// Consume initial damage so the emulator is in a clean state.
+	initMsg := model.Init()()
+	if _, ok := initMsg.(terminalOutputMsg); !ok {
+		t.Fatalf("expected terminalOutputMsg from Init, got %T", initMsg)
+	}
+
+	// Start polling — should block because no new data has arrived.
+	cmd := pollTerminal(model.emulator)
+	done := make(chan tea.Msg, 1)
+	go func() { done <- cmd() }()
+
+	select {
+	case msg := <-done:
+		t.Fatalf("pollTerminal returned without new data: %T", msg)
+	case <-time.After(50 * time.Millisecond):
+		// Expected: still blocking.
+	}
+
+	// Write data through the pipe to trigger damage.
+	if _, err := pw.Write([]byte("hello")); err != nil {
+		t.Fatalf("pipe write failed: %v", err)
+	}
+
+	select {
+	case msg := <-done:
+		outputMsg, ok := msg.(terminalOutputMsg)
+		if !ok {
+			t.Fatalf("expected terminalOutputMsg, got %T", msg)
+		}
+		if len(outputMsg.Frame.Damage) == 0 {
+			t.Fatal("expected damage in returned frame")
+		}
+		combined := strings.Join(outputMsg.Frame.Rows, "")
+		if !strings.Contains(combined, "hello") {
+			t.Errorf("expected 'hello' in frame rows, got: %q", combined)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("pollTerminal did not return after data was written")
 	}
 }
 

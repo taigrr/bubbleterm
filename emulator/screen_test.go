@@ -483,6 +483,83 @@ func TestPadRowANSIAwareWidth(t *testing.T) {
 	}
 }
 
+func TestGetScreenReturnsCachedRowsWhenUndamaged(t *testing.T) {
+	e, err := New(10, 5)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer e.Close()
+
+	// First call: consumes initial damage, renders cells.
+	first := e.GetScreen()
+	if len(first.Damage) == 0 {
+		t.Fatal("expected initial damage")
+	}
+
+	// Second call without new data: should return cached rows, no damage,
+	// and no renderCells work.
+	second := e.GetScreen()
+	if len(second.Damage) != 0 {
+		t.Fatalf("expected no damage on cached call, got %d", len(second.Damage))
+	}
+	if len(second.Rows) != len(first.Rows) {
+		t.Fatalf("cached rows length %d != first rows length %d", len(second.Rows), len(first.Rows))
+	}
+	for i := range first.Rows {
+		if second.Rows[i] != first.Rows[i] {
+			t.Errorf("cached row %d differs: %q vs %q", i, second.Rows[i], first.Rows[i])
+		}
+	}
+
+	// Write data to trigger damage.
+	e.mu.Lock()
+	e.vt.Write([]byte("hello"))
+	e.damaged = true
+	e.mu.Unlock()
+
+	// Third call: damaged, should re-render and return updated rows.
+	third := e.GetScreen()
+	if len(third.Damage) == 0 {
+		t.Fatal("expected damage after write")
+	}
+	combined := strings.Join(third.Rows, "")
+	if !strings.Contains(combined, "hello") {
+		t.Errorf("expected 'hello' in re-rendered rows, got: %q", combined)
+	}
+}
+
+func BenchmarkGetScreenUndamaged(b *testing.B) {
+	e, err := New(80, 24)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer e.Close()
+
+	// Consume initial damage.
+	_ = e.GetScreen()
+
+	b.ResetTimer()
+	for range b.N {
+		e.GetScreen()
+	}
+}
+
+func BenchmarkGetScreenDamaged(b *testing.B) {
+	e, err := New(80, 24)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer e.Close()
+
+	b.ResetTimer()
+	for range b.N {
+		e.mu.Lock()
+		e.damaged = true
+		e.mu.Unlock()
+		e.GetScreen()
+	}
+}
+
 func TestEmulatorResizeMarksDamage(t *testing.T) {
 	e, err := New(80, 24)
 	if err != nil {

@@ -136,6 +136,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Send mouse motion to terminal (button -1 indicates motion without button)
 		return m, sendMouseEvent(m.emulator, msg.Mouse().X, msg.Mouse().Y, -1, false)
 
+	case tea.MouseWheelMsg:
+		if !m.focused {
+			return m, nil
+		}
+		return m, sendMouseWheel(m.emulator, msg.Mouse().X, msg.Mouse().Y, int(msg.Mouse().Button))
+
 	case translatedMouseMsg:
 		if !m.focused {
 			return m, nil
@@ -151,6 +157,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, sendMouseEvent(m.emulator, msg.X, msg.Y, int(originalMsg.Mouse().Button), false)
 		case tea.MouseMotionMsg:
 			return m, sendMouseEvent(m.emulator, msg.X, msg.Y, -1, false)
+		case tea.MouseWheelMsg:
+			return m, sendMouseWheel(m.emulator, msg.X, msg.Y, int(originalMsg.Mouse().Button))
 		}
 
 	case tea.WindowSizeMsg:
@@ -165,18 +173,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.EmulatorID != m.emulator.ID() {
 			return m, nil // Ignore messages from other emulators
 		}
-		// Skip rerender if nothing changed
 		if len(msg.Frame.Damage) == 0 {
 			if m.autoPoll {
 				return m, pollTerminal(m.emulator)
 			}
 			return m, nil
 		}
-		// Update the frame with new terminal output
 		m.frame = msg.Frame
-		// Cache the rendered view for fast access
 		m.cachedView = strings.Join(m.frame.Rows, "\n")
-		// Don't immediately poll again - let the tick handle regular polling
 		if m.autoPoll {
 			return m, pollTerminal(m.emulator)
 		}

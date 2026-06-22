@@ -2,10 +2,13 @@ package bubbleterm
 
 import (
 	"os/exec"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/taigrr/bubbleterm/emulator"
 )
+
+const pollInterval = 8 * time.Millisecond // ~120 Hz max poll rate
 
 // terminalOutputMsg carries new terminal output
 type terminalOutputMsg struct {
@@ -27,12 +30,19 @@ type startCommandMsg struct {
 
 // Commands (side effects)
 
-// pollTerminal polls the emulator for new output (non-blocking)
+// pollTerminal polls the emulator for new output. It loops internally,
+// sleeping between checks, and only returns a message when the screen
+// has actually changed. This avoids sending idle messages to bubbletea
+// that would trigger unnecessary View/render cycles.
 func pollTerminal(emu *emulator.Emulator) tea.Cmd {
 	return func() tea.Msg {
-		// Always return current frame immediately - don't block
-		frame := emu.GetScreen()
-		return terminalOutputMsg{Frame: frame, EmulatorID: emu.ID()}
+		for {
+			time.Sleep(pollInterval)
+			frame := emu.GetScreen()
+			if len(frame.Damage) > 0 {
+				return terminalOutputMsg{Frame: frame, EmulatorID: emu.ID()}
+			}
+		}
 	}
 }
 
@@ -51,6 +61,17 @@ func sendInput(emu *emulator.Emulator, input string) tea.Cmd {
 func sendMouseEvent(emu *emulator.Emulator, x, y, button int, pressed bool) tea.Cmd {
 	return func() tea.Msg {
 		err := emu.SendMouse(button, x, y, pressed)
+		if err != nil {
+			return terminalErrorMsg{Err: err, EmulatorID: emu.ID()}
+		}
+		return nil
+	}
+}
+
+// sendMouseWheel sends a mouse wheel event to the terminal
+func sendMouseWheel(emu *emulator.Emulator, x, y, button int) tea.Cmd {
+	return func() tea.Msg {
+		err := emu.SendMouseWheel(button, x, y)
 		if err != nil {
 			return terminalErrorMsg{Err: err, EmulatorID: emu.ID()}
 		}
