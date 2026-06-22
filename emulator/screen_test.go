@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/x/vt"
 )
 
 func TestEmulatorCreation(t *testing.T) {
@@ -148,6 +150,48 @@ func TestEmulatorSendMouse(t *testing.T) {
 	err = e.SendMouse(2, 5, 5, true) // right click
 	if err != nil {
 		t.Fatalf("SendMouse (right) failed: %v", err)
+	}
+}
+
+func TestEmulatorSendMouseWheel(t *testing.T) {
+	e, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("failed to create emulator: %v", err)
+	}
+	defer e.Close()
+
+	// Wheel up and wheel down should both be accepted. The button values
+	// match vt.MouseWheelUp / vt.MouseWheelDown.
+	if err := e.SendMouseWheel(int(vt.MouseWheelUp), 10, 5); err != nil {
+		t.Fatalf("SendMouseWheel (up) failed: %v", err)
+	}
+	if err := e.SendMouseWheel(int(vt.MouseWheelDown), 10, 5); err != nil {
+		t.Fatalf("SendMouseWheel (down) failed: %v", err)
+	}
+}
+
+func TestEmulatorDoneClosesOnClose(t *testing.T) {
+	e, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("failed to create emulator: %v", err)
+	}
+
+	done := e.Done()
+	select {
+	case <-done:
+		t.Fatal("Done channel closed before Close")
+	default:
+	}
+
+	if err := e.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	select {
+	case <-done:
+		// Expected: closed after Close.
+	case <-time.After(time.Second):
+		t.Fatal("Done channel not closed after Close")
 	}
 }
 

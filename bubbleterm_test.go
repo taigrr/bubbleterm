@@ -136,6 +136,10 @@ func TestKeyToTerminalInput(t *testing.T) {
 		{"ctrl+^", tea.KeyPressMsg{Code: '^', Mod: tea.ModCtrl}, "\x1e"},
 		{"ctrl+_", tea.KeyPressMsg{Code: '_', Mod: tea.ModCtrl}, "\x1f"},
 
+		// Ctrl+alt+symbol (ESC prefix + the control byte)
+		{"ctrl+alt+[", tea.KeyPressMsg{Code: '[', Mod: tea.ModCtrl | tea.ModAlt}, "\x1b\x1b"},
+		{"ctrl+alt+\\", tea.KeyPressMsg{Code: '\\', Mod: tea.ModCtrl | tea.ModAlt}, "\x1b\x1c"},
+
 		// Function keys
 		{"f1", tea.KeyPressMsg{Code: tea.KeyF1}, "\x1bOP"},
 		{"f2", tea.KeyPressMsg{Code: tea.KeyF2}, "\x1bOQ"},
@@ -210,6 +214,12 @@ func TestKeyToTerminalInput(t *testing.T) {
 
 		// Modified tab
 		{"alt+tab", tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModAlt}, "\t"},
+
+		// Printable Code with no Text set (fallback path)
+		{"plain rune no text", tea.KeyPressMsg{Code: 'a'}, "a"},
+
+		// Ctrl + unmapped symbol falls through to the printable rune
+		{"ctrl+unmapped symbol", tea.KeyPressMsg{Code: '!', Mod: tea.ModCtrl}, "!"},
 
 		// Unknown key returns empty string
 		{"unknown key", tea.KeyPressMsg{Code: tea.KeyF13}, ""},
@@ -619,10 +629,21 @@ func TestModelUpdateHandlesMouseWheelMsg(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected a command from MouseWheelMsg, got nil")
 	}
+	// Executing the command must not surface an error message.
+	if msg := cmd(); msg != nil {
+		if errMsg, ok := msg.(terminalErrorMsg); ok {
+			t.Fatalf("wheel-up command returned error: %v", errMsg.Err)
+		}
+	}
 
 	_, cmd = model.Update(tea.MouseWheelMsg{X: 5, Y: 5, Button: tea.MouseWheelDown})
 	if cmd == nil {
 		t.Fatal("expected a command from MouseWheelMsg (down), got nil")
+	}
+	if msg := cmd(); msg != nil {
+		if errMsg, ok := msg.(terminalErrorMsg); ok {
+			t.Fatalf("wheel-down command returned error: %v", errMsg.Err)
+		}
 	}
 }
 
