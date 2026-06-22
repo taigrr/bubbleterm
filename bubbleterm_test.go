@@ -373,8 +373,11 @@ func TestModelUpdateSkipsUndamagedFrameWithoutMutatingView(t *testing.T) {
 	if updated != model {
 		t.Fatal("expected Update to return same model pointer")
 	}
-	if cmd == nil {
-		t.Fatal("expected follow-up poll command for undamaged frame when auto-poll is enabled")
+	// The blocking auto-poll loop owns polling continuity and only emits
+	// damaged frames, so an undamaged frame must NOT spawn another poll
+	// command (doing so would accumulate blocked goroutines).
+	if cmd != nil {
+		t.Fatal("expected no follow-up poll command for an undamaged frame")
 	}
 	if got := model.View().Content; got != initialView {
 		t.Fatalf("expected view to stay unchanged, got %q", got)

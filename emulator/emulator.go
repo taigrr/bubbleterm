@@ -184,13 +184,14 @@ func (e *Emulator) GetScreen() EmittedFrame {
 	// Check for changes
 	var damage []LineDamage
 	if rendered != e.lastRender {
+		damage = make([]LineDamage, e.height)
 		for y := 0; y < e.height; y++ {
-			damage = append(damage, LineDamage{
+			damage[y] = LineDamage{
 				Row:    y,
 				X1:     0,
 				X2:     e.width,
 				Reason: CRText,
-			})
+			}
 		}
 		e.lastRender = rendered
 	}
@@ -206,7 +207,7 @@ func splitIntoRows(rendered string, height, width int) []string {
 	lines := strings.Split(rendered, "\n")
 	emptyRow := strings.Repeat(" ", width)
 
-	for i := 0; i < height; i++ {
+	for i := range height {
 		if i < len(lines) && lines[i] != "" {
 			rows[i] = padRow(lines[i], width)
 		} else {
@@ -451,6 +452,13 @@ func (e *Emulator) Close() error {
 	})
 
 	return closeErr
+}
+
+// Done returns a channel that is closed when the emulator is closed. Callers
+// blocked on polling (e.g. an auto-poll loop) can select on this to exit
+// promptly instead of sleeping until process exit.
+func (e *Emulator) Done() <-chan struct{} {
+	return e.stopChan
 }
 
 func (e *Emulator) pipeResponseLoop() {

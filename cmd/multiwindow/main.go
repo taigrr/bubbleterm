@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"slices"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -230,8 +231,7 @@ func (m *MultiWindowOS) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Remove dead windows (in reverse order to maintain indices)
-		for i := len(deadWindows) - 1; i >= 0; i-- {
-			windowIndex := deadWindows[i]
+		for _, windowIndex := range slices.Backward(deadWindows) {
 			// Close the terminal
 			m.Windows[windowIndex].Terminal.Close()
 			// Remove from slice
@@ -483,10 +483,7 @@ func (m *MultiWindowOS) View() tea.View {
 	comp := lipgloss.NewCompositor(layers...)
 
 	// Render compositor to a fixed-size canvas to prevent overflow
-	canvasHeight := m.height - 1 // Leave room for status line
-	if canvasHeight < 1 {
-		canvasHeight = 1
-	}
+	canvasHeight := max(m.height-1, 1) // Leave room for status line
 	canvas := lipgloss.NewCanvas(m.width, canvasHeight)
 	canvas.Compose(comp)
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -538,8 +539,7 @@ func BenchmarkGetScreenUndamaged(b *testing.B) {
 	// Consume initial damage.
 	_ = e.GetScreen()
 
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		e.GetScreen()
 	}
 }
@@ -551,8 +551,32 @@ func BenchmarkGetScreenDamaged(b *testing.B) {
 	}
 	defer e.Close()
 
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
+		e.mu.Lock()
+		e.damaged = true
+		e.mu.Unlock()
+		e.GetScreen()
+	}
+}
+
+// BenchmarkGetScreenDamagedContent exercises the realistic damaged path where
+// the screen is full of attributed (SGR) text, so splitIntoRows/padRow do real
+// work instead of returning blank rows.
+func BenchmarkGetScreenDamagedContent(b *testing.B) {
+	e, err := New(80, 24)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer e.Close()
+
+	e.mu.Lock()
+	for row := range 24 {
+		// Move cursor, set a color, write a partial line so padding kicks in.
+		e.vt.Write([]byte("\x1b[" + strconv.Itoa(row+1) + ";1H\x1b[1;32mrow content with attrs\x1b[0m"))
+	}
+	e.mu.Unlock()
+
+	for b.Loop() {
 		e.mu.Lock()
 		e.damaged = true
 		e.mu.Unlock()
@@ -672,7 +696,7 @@ func TestSplitIntoRowsBasic(t *testing.T) {
 func BenchmarkSplitIntoRows(b *testing.B) {
 	// Simulate a typical 80x24 terminal render with ANSI codes
 	var buf strings.Builder
-	for row := 0; row < 24; row++ {
+	for row := range 24 {
 		buf.WriteString("\x1b[32m")
 		buf.WriteString(strings.Repeat("A", 80))
 		buf.WriteString("\x1b[0m")
@@ -682,8 +706,7 @@ func BenchmarkSplitIntoRows(b *testing.B) {
 	}
 	rendered := buf.String()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		splitIntoRows(rendered, 24, 80)
 	}
 }

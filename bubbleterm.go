@@ -97,8 +97,13 @@ func NewWithCommand(width, height int, cmd *exec.Cmd) (*Model, error) {
 
 // Init initializes the bubble (no automatic ticking)
 func (m *Model) Init() tea.Cmd {
-	// Only do initial poll, no automatic ticking
-	return pollTerminal(m.emulator)
+	// When auto-polling, start the self-rescheduling blocking poll loop.
+	// Otherwise grab the initial frame once and let the external ticker
+	// drive subsequent updates.
+	if m.autoPoll {
+		return pollTerminal(m.emulator)
+	}
+	return pollTerminalOnce(m.emulator)
 }
 
 // Update handles messages and updates the model state
@@ -174,9 +179,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil // Ignore messages from other emulators
 		}
 		if len(msg.Frame.Damage) == 0 {
-			if m.autoPoll {
-				return m, pollTerminal(m.emulator)
-			}
+			// Nothing changed and the view is left untouched. The blocking
+			// auto-poll loop is self-sustaining (it only ever emits damaged
+			// frames, each of which reschedules it on the damage path below),
+			// so there is nothing to reschedule here. Rescheduling a blocking
+			// poll on every undamaged message would accumulate goroutines.
 			return m, nil
 		}
 		m.frame = msg.Frame
@@ -209,7 +216,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // UpdateTerminal manually polls the terminal for updates (called by external ticker)
 func (m *Model) UpdateTerminal() tea.Cmd {
-	return pollTerminal(m.emulator)
+	return pollTerminalOnce(m.emulator)
 }
 
 // View renders the terminal output.
