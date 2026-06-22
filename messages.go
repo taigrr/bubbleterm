@@ -2,13 +2,10 @@ package bubbleterm
 
 import (
 	"os/exec"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/taigrr/bubbleterm/emulator"
 )
-
-const pollInterval = 8 * time.Millisecond // ~120 Hz max poll rate
 
 // terminalOutputMsg carries new terminal output
 type terminalOutputMsg struct {
@@ -30,24 +27,29 @@ type startCommandMsg struct {
 
 // Commands (side effects)
 
-// pollTerminal polls the emulator for new output. It loops internally,
-// sleeping between checks, and only returns a message when the screen
-// has actually changed. This avoids sending idle messages to bubbletea
-// that would trigger unnecessary View/render cycles.
-//
-// It is intended ONLY for the auto-poll loop, which keeps exactly one of
-// these in flight at a time (each returned message reschedules the next
-// poll). Do not use it from an external ticker: a new blocking goroutine
-// would be spawned on every tick and never return while the terminal is
-// idle. Use pollTerminalOnce for manually driven polling.
+// pollTerminal blocks until the emulator signals new damage, then returns the
+// changed frame. It keeps exactly one goroutine in flight at a time — each
+// returned message reschedules the next poll via Update. Do not use it from an
+// external ticker; use pollTerminalOnce for manually driven polling.
 func pollTerminal(emu *emulator.Emulator) tea.Cmd {
 	return func() tea.Msg {
 		done := emu.Done()
+		// Capture notify before GetScreen so any signal that arrives during
+		// or after GetScreen is not lost: the buffered channel holds it
+		// until the select below reads it.
+		notify := emu.NotifyChanged()
+
+		// Check for existing damage first (e.g. the initial frame) before
+		// blocking on the channel.
+		if frame := emu.GetScreen(); len(frame.Damage) > 0 {
+			return terminalOutputMsg{Frame: frame, EmulatorID: emu.ID()}
+		}
+
 		for {
 			select {
 			case <-done:
 				return nil
-			case <-time.After(pollInterval):
+			case <-notify:
 			}
 			frame := emu.GetScreen()
 			if len(frame.Damage) > 0 {
