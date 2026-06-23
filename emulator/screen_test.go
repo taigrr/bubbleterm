@@ -2,7 +2,6 @@ package emulator
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"os/exec"
 	"strconv"
@@ -192,35 +191,6 @@ func TestEmulatorDoneClosesOnClose(t *testing.T) {
 		// Expected: closed after Close.
 	case <-time.After(time.Second):
 		t.Fatal("Done channel not closed after Close")
-	}
-}
-
-func TestEmulatorSetFrameRate(t *testing.T) {
-	e, err := New(80, 24)
-	if err != nil {
-		t.Fatalf("failed to create emulator: %v", err)
-	}
-	defer e.Close()
-
-	if err := e.SetFrameRate(60); err != nil {
-		t.Fatalf("SetFrameRate(60) returned error: %v", err)
-	}
-	if err := e.SetFrameRate(1); err != nil {
-		t.Fatalf("SetFrameRate(1) returned error: %v", err)
-	}
-}
-
-func TestSetFrameRateInvalidValues(t *testing.T) {
-	e, err := New(80, 24)
-	if err != nil {
-		t.Fatalf("failed to create emulator: %v", err)
-	}
-	defer e.Close()
-
-	for _, fps := range []int{0, -1, -100} {
-		if err := e.SetFrameRate(fps); !errors.Is(err, ErrInvalidFrameRate) {
-			t.Errorf("SetFrameRate(%d) = %v, want ErrInvalidFrameRate", fps, err)
-		}
 	}
 }
 

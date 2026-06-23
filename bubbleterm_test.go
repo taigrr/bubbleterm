@@ -836,3 +836,97 @@ func TestCloseNilEmulator(t *testing.T) {
 		t.Fatalf("expected nil error closing model without emulator, got %v", err)
 	}
 }
+
+// TestPollLatency measures the time between writing data and pollTerminal
+// returning the damaged frame. With the old timer-based approach this was
+// bounded by pollInterval (8ms); with the channel-based approach it should
+// be under 1ms on average.
+func TestPollLatency(t *testing.T) {
+	pr, pw := io.Pipe()
+	_, iw := io.Pipe()
+
+	model, err := NewWithPipes(80, 24, pr, iw)
+	if err != nil {
+		t.Fatalf("NewWithPipes failed: %v", err)
+	}
+	defer model.Close()
+
+	// Consume initial damage.
+	if msg := model.Init()(); msg == nil {
+		t.Fatal("expected initial frame")
+	}
+
+	const iterations = 50
+	var total time.Duration
+
+	for i := 0; i < iterations; i++ {
+		cmd := pollTerminal(model.emulator)
+		done := make(chan tea.Msg, 1)
+		go func() { done <- cmd() }()
+
+		// Let the goroutine enter the select before writing.
+		time.Sleep(1 * time.Millisecond)
+
+		start := time.Now()
+		if _, err := pw.Write([]byte("x")); err != nil {
+			t.Fatalf("write failed: %v", err)
+		}
+
+		select {
+		case msg := <-done:
+			elapsed := time.Since(start)
+			total += elapsed
+			if _, ok := msg.(terminalOutputMsg); !ok {
+				t.Fatalf("expected terminalOutputMsg, got %T", msg)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("pollTerminal did not return after write")
+		}
+
+		// Consume the damage so next iteration starts clean.
+		model.emulator.GetScreen()
+	}
+
+	avg := total / iterations
+	t.Logf("average poll latency over %d iterations: %v", iterations, avg)
+
+	// The old 8ms timer would produce an average latency of ~4ms (uniform
+	// distribution over [0, 8ms]). With the channel-based approach, latency
+	// should be well under 1ms. Use 2ms as a generous upper bound.
+	if avg > 2*time.Millisecond {
+		t.Errorf("average latency %v exceeds 2ms threshold; channel notification may not be working", avg)
+	}
+}
+
+func BenchmarkPollLatency(b *testing.B) {
+	pr, pw := io.Pipe()
+	_, iw := io.Pipe()
+
+	model, err := NewWithPipes(80, 24, pr, iw)
+	if err != nil {
+		b.Fatalf("NewWithPipes failed: %v", err)
+	}
+	defer model.Close()
+
+	// Consume initial damage.
+	model.Init()()
+
+	b.ResetTimer()
+	for b.Loop() {
+		cmd := pollTerminal(model.emulator)
+		done := make(chan tea.Msg, 1)
+		go func() { done <- cmd() }()
+
+		if _, err := pw.Write([]byte("x")); err != nil {
+			b.Fatalf("write failed: %v", err)
+		}
+
+		msg := <-done
+		if _, ok := msg.(terminalOutputMsg); !ok {
+			b.Fatalf("expected terminalOutputMsg, got %T", msg)
+		}
+
+		// Consume damage for next iteration.
+		model.emulator.GetScreen()
+	}
+}
