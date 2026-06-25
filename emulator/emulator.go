@@ -87,8 +87,34 @@ func New(cols, rows int) (*Emulator, error) {
 
 	// Start the PTY read loop
 	go e.ptyReadLoop()
+	// Drain terminal responses (DA/DSR/XTVERSION/in-band-resize) back to the
+	// PTY so the child process receives replies to its capability queries.
+	go e.ptyResponseLoop()
 
 	return e, nil
+}
+
+// ptyResponseLoop forwards responses the vt emulator generates for terminal
+// queries back into the PTY (i.e. onto the child's stdin). Without this, apps
+// that wait on DA/DSR/XTVERSION replies can stall before rendering.
+func (e *Emulator) ptyResponseLoop() {
+	buf := make([]byte, 4096)
+	for {
+		select {
+		case <-e.stopChan:
+			return
+		default:
+		}
+		n, err := e.vt.Read(buf)
+		if n > 0 && e.pty != nil {
+			if _, werr := e.pty.Write(buf[:n]); werr != nil {
+				return
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
 }
 
 // NewFromPipes creates a headless terminal emulator that reads output from r
