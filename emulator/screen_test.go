@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/vt"
 )
 
@@ -752,5 +753,101 @@ func BenchmarkSplitIntoRows(b *testing.B) {
 
 	for b.Loop() {
 		splitIntoRows(rendered, 24, 80)
+	}
+}
+
+func TestCellAt(t *testing.T) {
+	e, err := New(10, 5)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer e.Close()
+
+	e.mu.Lock()
+	e.vt.Write([]byte("Hi"))
+	e.mu.Unlock()
+
+	h := e.CellAt(0, 0)
+	if h == nil || h.Content != "H" {
+		t.Fatalf("CellAt(0,0) = %v, want 'H'", h)
+	}
+	i := e.CellAt(1, 0)
+	if i == nil || i.Content != "i" {
+		t.Fatalf("CellAt(1,0) = %v, want 'i'", i)
+	}
+
+	// Empty cell after the text
+	empty := e.CellAt(2, 0)
+	if empty == nil {
+		t.Fatal("CellAt(2,0) = nil, want empty cell")
+	}
+
+	// Out of bounds returns nil
+	if c := e.CellAt(-1, 0); c != nil {
+		t.Fatalf("CellAt(-1,0) = %v, want nil", c)
+	}
+	if c := e.CellAt(0, 999); c != nil {
+		t.Fatalf("CellAt(0,999) = %v, want nil", c)
+	}
+}
+
+func TestGetCells(t *testing.T) {
+	e, err := New(10, 5)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer e.Close()
+
+	e.mu.Lock()
+	e.vt.Write([]byte("AB"))
+	e.mu.Unlock()
+
+	cells := e.GetCells()
+	if len(cells) != 5 {
+		t.Fatalf("GetCells() returned %d rows, want 5", len(cells))
+	}
+	if len(cells[0]) != 10 {
+		t.Fatalf("GetCells()[0] has %d columns, want 10", len(cells[0]))
+	}
+
+	if cells[0][0].Content != "A" {
+		t.Errorf("cells[0][0].Content = %q, want 'A'", cells[0][0].Content)
+	}
+	if cells[0][1].Content != "B" {
+		t.Errorf("cells[0][1].Content = %q, want 'B'", cells[0][1].Content)
+	}
+
+	// Remaining cells on row 0 should be empty
+	for x := 2; x < 10; x++ {
+		if c := cells[0][x].Content; c != "" && c != " " {
+			t.Errorf("cells[0][%d].Content = %q, want empty", x, c)
+		}
+	}
+}
+
+func TestCellAtStyle(t *testing.T) {
+	e, err := New(10, 5)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer e.Close()
+
+	// Write bold red "X"
+	e.mu.Lock()
+	e.vt.Write([]byte("\x1b[1;31mX\x1b[0m"))
+	e.mu.Unlock()
+
+	c := e.CellAt(0, 0)
+	if c == nil {
+		t.Fatal("CellAt(0,0) = nil")
+	}
+	if c.Content != "X" {
+		t.Fatalf("Content = %q, want 'X'", c.Content)
+	}
+	if c.Style.Attrs&uv.AttrBold == 0 {
+		t.Error("expected bold attribute set")
+	}
+	if c.Style.Fg == nil {
+		t.Error("expected foreground color set")
 	}
 }

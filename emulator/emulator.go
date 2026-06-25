@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 	"github.com/creack/pty"
@@ -228,6 +229,33 @@ func padRow(row string, width int) string {
 		return row + reset + strings.Repeat(" ", width-visibleLen)
 	}
 	return row + reset
+}
+
+// CellAt returns the cell at the given column (x) and row (y).
+// It returns nil if the position is out of bounds.
+func (e *Emulator) CellAt(x, y int) *uv.Cell {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.vt.CellAt(x, y)
+}
+
+// GetCells returns the full screen buffer as a 2D grid of cells.
+// The outer slice is rows, the inner slice is columns.
+func (e *Emulator) GetCells() [][]uv.Cell {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	// TODO: replace per-cell loop with vt.Line(y) once charmbracelet/x/vt
+	// exposes it (Screen.buf is private).
+	cells := make([][]uv.Cell, e.height)
+	for y := range e.height {
+		cells[y] = make([]uv.Cell, e.width)
+		for x := range e.width {
+			if c := e.vt.CellAt(x, y); c != nil {
+				cells[y][x] = *c
+			}
+		}
+	}
+	return cells
 }
 
 // Cursor returns the current cursor position and whether the cursor is visible.
