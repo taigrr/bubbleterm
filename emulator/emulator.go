@@ -84,8 +84,11 @@ func New(cols, rows int) (*Emulator, error) {
 		return nil, err
 	}
 
-	// Start the PTY read loop
+	// Start the PTY read loop and drain terminal responses
+	// (DA/DSR/XTVERSION/in-band-resize) back to the child so capability
+	// queries don't stall before rendering.
 	go e.ptyReadLoop()
+	go e.responseLoop()
 
 	return e, nil
 }
@@ -110,7 +113,7 @@ func NewFromPipes(cols, rows int, r io.Reader, w io.WriteCloser) (*Emulator, err
 
 	// Start the read loop using the provided reader and drain terminal
 	// responses (for queries like DA/DSR) back to the remote process.
-	go e.pipeResponseLoop()
+	go e.responseLoop()
 	go e.ptyReadLoop()
 
 	return e, nil
@@ -493,12 +496,30 @@ func (e *Emulator) NotifyChanged() <-chan struct{} {
 	return e.notifyC
 }
 
-func (e *Emulator) pipeResponseLoop() {
+// responseLoop forwards responses the vt emulator generates for terminal
+// queries (DA/DSR/XTVERSION/in-band-resize) back to the child process, i.e.
+// onto its stdin. The underlying vt writes these to a synchronous io.Pipe, so
+// without draining them the write blocks the read loop under e.mu and freezes
+// the terminal. It targets the PTY master or the pipe writer depending on how
+// the emulator was constructed.
+func (e *Emulator) responseLoop() {
+	var dst io.Writer
+	if e.isPipe {
+		dst = e.writer
+	} else {
+		dst = e.pty
+	}
+
 	buf := make([]byte, 4096)
 	for {
+		select {
+		case <-e.stopChan:
+			return
+		default:
+		}
 		n, err := e.vt.Read(buf)
-		if n > 0 && e.writer != nil {
-			if _, writeErr := e.writer.Write(buf[:n]); writeErr != nil {
+		if n > 0 && dst != nil {
+			if _, writeErr := dst.Write(buf[:n]); writeErr != nil {
 				return
 			}
 		}
