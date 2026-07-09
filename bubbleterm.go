@@ -179,11 +179,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil // Ignore messages from other emulators
 		}
 		if len(msg.Frame.Damage) == 0 {
-			// Nothing changed and the view is left untouched. The blocking
-			// auto-poll loop is self-sustaining (it only ever emits damaged
-			// frames, each of which reschedules it on the damage path below),
-			// so there is nothing to reschedule here. Rescheduling a blocking
-			// poll on every undamaged message would accumulate goroutines.
+			// The auto-poll loop only emits damaged frames, so this path
+			// is only reachable from pollTerminalOnce or manual GetScreen
+			// calls. Rescheduling a blocking poll on every undamaged
+			// message would accumulate goroutines, so do nothing here.
 			return m, nil
 		}
 		m.frame = msg.Frame
