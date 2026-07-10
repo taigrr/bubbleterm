@@ -29,6 +29,9 @@ const (
 
 	// CRRedraw means the application requested a redraw with RedrawAll
 	CRRedraw
+
+	// CRCursor means only the cursor moved or changed appearance; screen content is unchanged
+	CRCursor
 )
 
 // LineDamage represents a changed region on a single row.

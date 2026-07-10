@@ -1149,3 +1149,165 @@ func TestCursorStateTrackingViaPTY(t *testing.T) {
 		t.Errorf("cursor color = #%02x%02x%02x, want #ff6e63", r8, g8, b8)
 	}
 }
+
+func TestDamageOnCursorMoveOnly(t *testing.T) {
+	pr, pw := io.Pipe()
+	writer := &testWriter{}
+
+	e, err := NewFromPipes(80, 24, pr, writer)
+	if err != nil {
+		t.Fatalf("NewFromPipes failed: %v", err)
+	}
+	defer e.Close()
+
+	if _, err := pw.Write([]byte("Hello")); err != nil {
+		t.Fatalf("pipe write failed: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(strings.Join(e.GetScreen().Rows, ""), "Hello") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	e.GetScreen() // drain remaining damage
+
+	// Move cursor without changing content (CUP to row 1, col 10).
+	if _, err := pw.Write([]byte("\x1b[1;10H")); err != nil {
+		t.Fatalf("pipe write failed: %v", err)
+	}
+	deadline = time.Now().Add(2 * time.Second)
+	var frame EmittedFrame
+	for time.Now().Before(deadline) {
+		frame = e.GetScreen()
+		if len(frame.Damage) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(frame.Damage) == 0 {
+		t.Fatal("expected damage after cursor-only move")
+	}
+	if frame.Damage[0].Reason != CRCursor {
+		t.Errorf("damage reason = %d, want CRCursor (%d)", frame.Damage[0].Reason, CRCursor)
+	}
+
+	frame = e.GetScreen()
+	if len(frame.Damage) != 0 {
+		t.Fatalf("expected no damage on second call, got %d", len(frame.Damage))
+	}
+}
+
+func TestDamageOnCursorVisibilityChange(t *testing.T) {
+	pr, pw := io.Pipe()
+	writer := &testWriter{}
+
+	e, err := NewFromPipes(80, 24, pr, writer)
+	if err != nil {
+		t.Fatalf("NewFromPipes failed: %v", err)
+	}
+	defer e.Close()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(e.GetScreen().Damage) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if _, err := pw.Write([]byte("\x1b[?25l")); err != nil {
+		t.Fatalf("pipe write failed: %v", err)
+	}
+	deadline = time.Now().Add(2 * time.Second)
+	var frame EmittedFrame
+	for time.Now().Before(deadline) {
+		frame = e.GetScreen()
+		if len(frame.Damage) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(frame.Damage) == 0 {
+		t.Fatal("expected damage after cursor visibility change")
+	}
+	if frame.Damage[0].Reason != CRCursor {
+		t.Errorf("damage reason = %d, want CRCursor (%d)", frame.Damage[0].Reason, CRCursor)
+	}
+}
+
+func TestDamageOnCursorColorChange(t *testing.T) {
+	pr, pw := io.Pipe()
+	writer := &testWriter{}
+
+	e, err := NewFromPipes(80, 24, pr, writer)
+	if err != nil {
+		t.Fatalf("NewFromPipes failed: %v", err)
+	}
+	defer e.Close()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(e.GetScreen().Damage) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if _, err := pw.Write([]byte("\x1b]12;#ff0000\x07")); err != nil {
+		t.Fatalf("pipe write failed: %v", err)
+	}
+	deadline = time.Now().Add(2 * time.Second)
+	var frame EmittedFrame
+	for time.Now().Before(deadline) {
+		frame = e.GetScreen()
+		if len(frame.Damage) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(frame.Damage) == 0 {
+		t.Fatal("expected damage after cursor color change")
+	}
+	if frame.Damage[0].Reason != CRCursor {
+		t.Errorf("damage reason = %d, want CRCursor (%d)", frame.Damage[0].Reason, CRCursor)
+	}
+}
+
+func TestDamageReasonContentAndCursorChange(t *testing.T) {
+	pr, pw := io.Pipe()
+	writer := &testWriter{}
+
+	e, err := NewFromPipes(80, 24, pr, writer)
+	if err != nil {
+		t.Fatalf("NewFromPipes failed: %v", err)
+	}
+	defer e.Close()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(e.GetScreen().Damage) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if _, err := pw.Write([]byte("Hello")); err != nil {
+		t.Fatalf("pipe write failed: %v", err)
+	}
+	deadline = time.Now().Add(2 * time.Second)
+	var frame EmittedFrame
+	for time.Now().Before(deadline) {
+		frame = e.GetScreen()
+		if len(frame.Damage) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(frame.Damage) == 0 {
+		t.Fatal("expected damage after content+cursor change")
+	}
+	if frame.Damage[0].Reason != CRText {
+		t.Errorf("damage reason = %d, want CRText (%d)", frame.Damage[0].Reason, CRText)
+	}
+}
