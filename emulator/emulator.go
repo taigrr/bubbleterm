@@ -2,6 +2,7 @@ package emulator
 
 import (
 	"fmt"
+	"image/color"
 	"io"
 	"os"
 	"os/exec"
@@ -15,6 +16,20 @@ import (
 	"github.com/creack/pty"
 	"github.com/google/uuid"
 )
+
+// cursorStyleFromVT maps upstream vt.CursorStyle to our CursorStyle.
+// An explicit switch avoids a silent int cast that would break if the
+// upstream iota order ever changes.
+func cursorStyleFromVT(s vt.CursorStyle) CursorStyle {
+	switch s {
+	case vt.CursorUnderline:
+		return CursorUnderline
+	case vt.CursorBar:
+		return CursorBar
+	default:
+		return CursorBlock
+	}
+}
 
 // Emulator is a headless terminal emulator that maintains internal state
 // and renders to a framebuffer instead of directly to screen
@@ -50,6 +65,14 @@ type Emulator struct {
 
 	// Screen dimensions
 	width, height int
+
+	// Cursor state tracked via vt callbacks. These fields are written inside
+	// e.vt.Write calls, which ptyReadLoop always makes under e.mu.Lock.
+	// Readers use e.mu.RLock as normal.
+	cursorHidden bool
+	cursorStyle  vt.CursorStyle
+	cursorSteady bool // true = not blinking; zero value (false) = blinking, matching DEC default
+	cursorColor  color.Color
 }
 
 // EmittedFrame represents a rendered frame from the terminal.
@@ -70,6 +93,16 @@ func newEmulator(cols, rows int) *Emulator {
 		damaged:  true, // Initial render needed
 	}
 	e.lastRows = splitIntoRows("", cols, rows)
+	e.vt.SetCallbacks(vt.Callbacks{
+		CursorVisibility: func(visible bool) { e.cursorHidden = !visible },
+		// NOTE: upstream declares this parameter as "blink" but actually
+		// passes !blink (steady). See charmbracelet/x/vt screen.go:251.
+		CursorStyle: func(style vt.CursorStyle, steady bool) {
+			e.cursorStyle = style
+			e.cursorSteady = steady
+		},
+		CursorColor: func(c color.Color) { e.cursorColor = c },
+	})
 	return e
 }
 
@@ -261,9 +294,19 @@ func (e *Emulator) Cursor() (Pos, bool) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	pos := e.vt.CursorPosition()
-	// The vt package doesn't expose cursor visibility directly in a simple way
-	// Default to visible
-	return Pos{X: pos.X, Y: pos.Y}, true
+	return Pos{X: pos.X, Y: pos.Y}, !e.cursorHidden
+}
+
+// CursorAppearance returns the current cursor shape, blink state, and color
+// as set by the running application via DECSCUSR and OSC 12.
+func (e *Emulator) CursorAppearance() CursorAppearance {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return CursorAppearance{
+		Style: cursorStyleFromVT(e.cursorStyle),
+		Blink: !e.cursorSteady,
+		Color: e.cursorColor,
+	}
 }
 
 // SetOnExit sets a callback function that will be called when the process exits

@@ -1,5 +1,16 @@
 package emulator
 
+import "image/color"
+
+// CursorStyle represents a cursor shape.
+type CursorStyle int
+
+const (
+	CursorBlock CursorStyle = iota
+	CursorUnderline
+	CursorBar
+)
+
 // ChangeReason says what kind of change caused the region to change, for optimization etc.
 type ChangeReason int
 
@@ -32,4 +43,15 @@ type LineDamage struct {
 type Pos struct {
 	X int
 	Y int
+}
+
+// CursorAppearance holds the cursor shape, blink state, and color
+// as set by the running application via DECSCUSR and OSC 12.
+type CursorAppearance struct {
+	Style CursorStyle
+	Blink bool
+	// Color is the cursor color set via OSC 12. Nil means no color has been
+	// explicitly set. Note: after an OSC 112 reset, the upstream vt package
+	// returns the default color (typically white) rather than nil.
+	Color color.Color
 }
