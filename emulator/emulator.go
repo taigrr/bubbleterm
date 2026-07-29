@@ -2,6 +2,7 @@ package emulator
 
 import (
 	"fmt"
+	"image/color"
 	"io"
 	"os"
 	"os/exec"
@@ -15,6 +16,40 @@ import (
 	"github.com/creack/pty"
 	"github.com/google/uuid"
 )
+
+// cursorSnapshot holds the cursor state for change detection in GetScreen.
+type cursorSnapshot struct {
+	x, y    int
+	visible bool
+	style   vt.CursorStyle
+	steady  bool
+	color   color.Color
+}
+
+// colorsEqual compares two color.Color values by their RGBA components,
+// avoiding interface comparison which panics on non-comparable concrete types.
+func colorsEqual(a, b color.Color) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	ar, ag, ab, aa := a.RGBA()
+	br, bg, bb, ba := b.RGBA()
+	return ar == br && ag == bg && ab == bb && aa == ba
+}
+
+// cursorStyleFromVT maps upstream vt.CursorStyle to our CursorStyle.
+// An explicit switch avoids a silent int cast that would break if the
+// upstream iota order ever changes.
+func cursorStyleFromVT(s vt.CursorStyle) CursorStyle {
+	switch s {
+	case vt.CursorUnderline:
+		return CursorUnderline
+	case vt.CursorBar:
+		return CursorBar
+	default:
+		return CursorBlock
+	}
+}
 
 // Emulator is a headless terminal emulator that maintains internal state
 // and renders to a framebuffer instead of directly to screen
@@ -45,11 +80,20 @@ type Emulator struct {
 	// Damage tracking for change detection
 	lastRender string
 	lastRows   []string
+	lastCursor cursorSnapshot
 	damaged    bool
 	notifyC    chan struct{} // signaled when new damage occurs
 
 	// Screen dimensions
 	width, height int
+
+	// Cursor state tracked via vt callbacks. These fields are written inside
+	// e.vt.Write calls, which ptyReadLoop always makes under e.mu.Lock.
+	// Readers use e.mu.RLock as normal.
+	cursorHidden bool
+	cursorStyle  vt.CursorStyle
+	cursorSteady bool // true = not blinking; zero value (false) = blinking, matching DEC default
+	cursorColor  color.Color
 }
 
 // EmittedFrame represents a rendered frame from the terminal.
@@ -58,8 +102,8 @@ type EmittedFrame struct {
 	Damage []LineDamage // Lines that changed since the last GetScreen call
 }
 
-// New creates a new headless terminal emulator
-func New(cols, rows int) (*Emulator, error) {
+// newEmulator creates a base Emulator with common fields.
+func newEmulator(cols, rows int) *Emulator {
 	e := &Emulator{
 		vt:       vt.NewEmulator(cols, rows),
 		id:       uuid.New().String(),
@@ -69,6 +113,23 @@ func New(cols, rows int) (*Emulator, error) {
 		height:   rows,
 		damaged:  true, // Initial render needed
 	}
+	e.lastRows = splitIntoRows("", cols, rows)
+	e.vt.SetCallbacks(vt.Callbacks{
+		CursorVisibility: func(visible bool) { e.cursorHidden = !visible },
+		// NOTE: upstream declares this parameter as "blink" but actually
+		// passes !blink (steady). See charmbracelet/x/vt screen.go:251.
+		CursorStyle: func(style vt.CursorStyle, steady bool) {
+			e.cursorStyle = style
+			e.cursorSteady = steady
+		},
+		CursorColor: func(c color.Color) { e.cursorColor = c },
+	})
+	return e
+}
+
+// New creates a new headless terminal emulator
+func New(cols, rows int) (*Emulator, error) {
+	e := newEmulator(cols, rows)
 
 	var err error
 	e.pty, e.tty, err = pty.Open()
@@ -98,18 +159,10 @@ func New(cols, rows int) (*Emulator, error) {
 // process is already running and you have access to its stdin/stdout pipes.
 // The caller is responsible for closing the reader when the process exits.
 func NewFromPipes(cols, rows int, r io.Reader, w io.WriteCloser) (*Emulator, error) {
-	e := &Emulator{
-		vt:       vt.NewEmulator(cols, rows),
-		id:       uuid.New().String(),
-		stopChan: make(chan struct{}),
-		notifyC:  make(chan struct{}, 1),
-		reader:   r,
-		writer:   w,
-		isPipe:   true,
-		width:    cols,
-		height:   rows,
-		damaged:  true,
-	}
+	e := newEmulator(cols, rows)
+	e.reader = r
+	e.writer = w
+	e.isPipe = true
 
 	// Start the read loop using the provided reader and drain terminal
 	// responses (for queries like DA/DSR) back to the remote process.
@@ -181,24 +234,41 @@ func (e *Emulator) GetScreen() EmittedFrame {
 	rendered := e.vt.Render()
 	e.damaged = false
 
-	// Check for changes
-	var damage []LineDamage
-	if rendered != e.lastRender {
-		damage = make([]LineDamage, e.height)
-		for y := 0; y < e.height; y++ {
-			damage[y] = LineDamage{
-				Row:    y,
-				X1:     0,
-				X2:     e.width,
-				Reason: CRText,
-			}
-		}
-		e.lastRender = rendered
+	cpos := e.vt.CursorPosition()
+	snap := cursorSnapshot{
+		x:       cpos.X,
+		y:       cpos.Y,
+		visible: !e.cursorHidden,
+		style:   e.cursorStyle,
+		steady:  e.cursorSteady,
+		color:   e.cursorColor,
+	}
+	contentChanged := rendered != e.lastRender
+	cursorChanged := snap.x != e.lastCursor.x || snap.y != e.lastCursor.y ||
+		snap.visible != e.lastCursor.visible || snap.style != e.lastCursor.style ||
+		snap.steady != e.lastCursor.steady || !colorsEqual(snap.color, e.lastCursor.color)
+
+	e.lastCursor = snap
+
+	if !contentChanged && !cursorChanged {
+		return EmittedFrame{Rows: e.lastRows}
 	}
 
-	rows := splitIntoRows(rendered, e.height, e.width)
-	e.lastRows = rows
-	return EmittedFrame{Rows: rows, Damage: damage}
+	if contentChanged {
+		e.lastRender = rendered
+		e.lastRows = splitIntoRows(rendered, e.height, e.width)
+	}
+
+	reason := CRText
+	if cursorChanged && !contentChanged {
+		reason = CRCursor
+	}
+
+	damage := make([]LineDamage, e.height)
+	for y := range damage {
+		damage[y] = LineDamage{Row: y, X1: 0, X2: e.width, Reason: reason}
+	}
+	return EmittedFrame{Rows: e.lastRows, Damage: damage}
 }
 
 // splitIntoRows splits the rendered output into individual rows and pads to width
@@ -262,9 +332,19 @@ func (e *Emulator) Cursor() (Pos, bool) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	pos := e.vt.CursorPosition()
-	// The vt package doesn't expose cursor visibility directly in a simple way
-	// Default to visible
-	return Pos{X: pos.X, Y: pos.Y}, true
+	return Pos{X: pos.X, Y: pos.Y}, !e.cursorHidden
+}
+
+// CursorAppearance returns the current cursor shape, blink state, and color
+// as set by the running application via DECSCUSR and OSC 12.
+func (e *Emulator) CursorAppearance() CursorAppearance {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return CursorAppearance{
+		Style: cursorStyleFromVT(e.cursorStyle),
+		Blink: !e.cursorSteady,
+		Color: e.cursorColor,
+	}
 }
 
 // SetOnExit sets a callback function that will be called when the process exits
