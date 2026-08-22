@@ -892,9 +892,10 @@ func TestPollLatency(t *testing.T) {
 
 	// The old 8ms timer would produce an average latency of ~4ms (uniform
 	// distribution over [0, 8ms]). With the channel-based approach, latency
-	// should be well under 1ms. Use 2ms as a generous upper bound.
-	if avg > 2*time.Millisecond {
-		t.Errorf("average latency %v exceeds 2ms threshold; channel notification may not be working", avg)
+	// should be well under 1ms in normal runs. Use 3ms as a generous upper
+	// bound so race-instrumented runs do not fail on scheduler jitter.
+	if avg > 3*time.Millisecond {
+		t.Errorf("average latency %v exceeds 3ms threshold; channel notification may not be working", avg)
 	}
 }
 
