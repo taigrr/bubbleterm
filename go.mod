@@ -1,6 +1,6 @@
 module github.com/taigrr/bubbleterm
 
-go 1.27.1
+go 1.27.2
 
 require (
 	charm.land/bubbletea/v2 v2.1.0
