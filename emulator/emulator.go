@@ -627,15 +627,16 @@ func (e *Emulator) ptyReadLoop() {
 		}
 
 		n, err := source.Read(buf)
-		if err != nil {
-			return
-		}
-
+		// Readers may return both data and an error (including EOF). Render
+		// those final bytes before stopping so process output is not lost.
 		if n > 0 {
 			e.mu.Lock()
 			e.vt.Write(buf[:n])
 			e.markDamaged()
 			e.mu.Unlock()
+		}
+		if err != nil {
+			return
 		}
 	}
 }
