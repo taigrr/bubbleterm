@@ -109,7 +109,7 @@ func (m *Model) Init() tea.Cmd {
 // Update handles messages and updates the model state
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if !m.focused {
 			return m, nil
 		}
