@@ -936,3 +936,33 @@ func BenchmarkPollLatency(b *testing.B) {
 		model.emulator.GetScreen()
 	}
 }
+
+// Release events must not be encoded as a second press for legacy terminals.
+func TestModelUpdateIgnoresKeyRelease(t *testing.T) {
+	model, err := New(80, 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := model.Close(); err != nil {
+			t.Errorf("close: %v", err)
+		}
+	})
+	for _, key := range []tea.KeyReleaseMsg{
+		{Code: 'a', Text: "a"},
+		{Code: tea.KeyEnter},
+		{Code: tea.KeyUp, Mod: tea.ModCtrl},
+	} {
+		updated, cmd := model.Update(key)
+		if updated != model {
+			t.Fatal("expected same model")
+		}
+		if cmd != nil {
+			t.Errorf("key release %+v produced an input command", key)
+		}
+		_, pressCmd := model.Update(tea.KeyPressMsg(key))
+		if pressCmd == nil {
+			t.Errorf("matching key press %+v produced no input command", key)
+		}
+	}
+}
