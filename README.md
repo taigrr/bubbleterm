@@ -196,6 +196,10 @@ focused := terminal.Focused()
 // Manual input sending
 terminal.SendInput("ls\n")
 
+// Paste text (wrapped in bracketed paste sequences when the program enabled
+// mode 2004). tea.PasteMsg is forwarded automatically by Update.
+terminal.Paste("echo hello\n")
+
 // Process monitoring
 if terminal.GetEmulator().IsProcessExited() {
     // Handle process exit

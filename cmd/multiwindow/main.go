@@ -202,6 +202,16 @@ func (m *MultiWindowOS) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case tea.PasteMsg:
+		// Forward pastes to the focused terminal while in insert mode
+		if m.InsertMode && m.FocusedWindow >= 0 && m.FocusedWindow < len(m.Windows) {
+			terminalModel, cmd := m.Windows[m.FocusedWindow].Terminal.Update(msg)
+			m.Windows[m.FocusedWindow].Terminal = terminalModel.(*bubbleterm.Model)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+
 	case tea.WindowSizeMsg:
 		// Update our screen dimensions
 		m.width = msg.Width

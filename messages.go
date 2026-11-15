@@ -85,6 +85,16 @@ func sendInput(emu *emulator.Emulator, input string) tea.Cmd {
 	}
 }
 
+// sendPaste sends pasted text to the terminal
+func sendPaste(emu *emulator.Emulator, text string) tea.Cmd {
+	return func() tea.Msg {
+		if err := emu.Paste(text); err != nil {
+			return terminalErrorMsg{Err: err, EmulatorID: emu.ID()}
+		}
+		return nil
+	}
+}
+
 // sendMouseEvent sends a mouse event to the terminal
 func sendMouseEvent(emu *emulator.Emulator, x, y, button int, pressed bool) tea.Cmd {
 	return func() tea.Msg {

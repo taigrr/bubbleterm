@@ -1,6 +1,7 @@
 package bubbleterm
 
 import (
+	"fmt"
 	"io"
 	"os/exec"
 	"strings"
@@ -934,5 +935,104 @@ func BenchmarkPollLatency(b *testing.B) {
 
 		// Consume damage for next iteration.
 		model.emulator.GetScreen()
+	}
+}
+
+// sendPasteMsg feeds a tea.PasteMsg through Update and returns what the
+// child process receives on its stdin. If enable is true, the child first
+// enables bracketed paste mode (DECSET 2004).
+func sendPasteMsg(t *testing.T, content, want string, enable bool) string {
+	t.Helper()
+	outR, outW := io.Pipe()
+	ir, iw := io.Pipe()
+
+	model, err := NewWithPipes(80, 24, outR, iw)
+	if err != nil {
+		t.Fatalf("NewWithPipes failed: %v", err)
+	}
+	defer model.Close()
+	defer outW.Close()
+	
+	if enable {	
+		// Enable the mode, then print a marker so we know the emulator has
+		// processed the DECSET before pasting.
+		if _, err := outW.Write(fmt.Append([]byte(ansi.SetModeBracketedPaste), "ready")); err != nil {
+			t.Fatalf("write mode set: %v", err)
+		}
+		deadline := time.Now().Add(2 * time.Second)
+		for !strings.Contains(strings.Join(model.GetEmulator().GetScreen().Rows, ""), "ready") {
+			if time.Now().After(deadline) {
+				t.Fatal("bracketed paste mode was never enabled")
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+
+	_, cmd := model.Update(tea.PasteMsg{Content: content})
+	if cmd == nil {
+		t.Fatal("expected command for paste")
+	}
+
+	// vt.Paste emits the brackets and body as separate writes, so keep
+	// reading until the full expected payload has arrived.
+	done := make(chan string, 1)
+	go func() {
+		var got []byte
+		buf := make([]byte, 256)
+		for len(got) < len(want) {
+			n, err := ir.Read(buf)
+			got = append(got, buf[:n]...)
+			if err != nil {
+				break
+			}
+		}
+		done <- string(got)
+	}()
+
+	if msg := cmd(); msg != nil {
+		t.Fatalf("expected nil message for successful paste, got %#v", msg)
+	}
+
+	select {
+	case got := <-done:
+		return got
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for pasted input")
+	}
+	return ""
+}
+
+func TestModelUpdatePasteMsgWithoutBracketedPaste(t *testing.T) {
+	if got := sendPasteMsg(t, "echo hi\n", "echo hi\n", false); got != "echo hi\n" {
+		t.Fatalf("expected raw paste, got %q", got)
+	}
+}
+
+func TestModelUpdatePasteMsgWithBracketedPaste(t *testing.T) {
+	want := "\x1b[200~echo hi\n\x1b[201~"
+	if got := sendPasteMsg(t, "echo hi\n", want, true); got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestModelUpdatePasteMsgStripsEmbeddedPasteEnd(t *testing.T) {
+	// Nested end marker that reappears after a single removal pass.
+	content := "a\x1b[20\x1b[201~1~b"
+	want := "\x1b[200~ab\x1b[201~"
+	if got := sendPasteMsg(t, content, want, true); got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestModelUpdateIgnoresPasteWhenBlurred(t *testing.T) {
+	model, err := New(80, 24)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer model.Close()
+	model.Blur()
+
+	if _, cmd := model.Update(tea.PasteMsg{Content: "x"}); cmd != nil {
+		t.Fatal("expected no command when blurred")
 	}
 }
