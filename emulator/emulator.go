@@ -467,6 +467,29 @@ func (e *Emulator) SendKey(key string) error {
 	return err
 }
 
+// Paste sends pasted text to the terminal. The underlying vt emulator wraps
+// it in ESC[200~ / ESC[201~ when the child process has enabled bracketed paste
+// mode (DEC private mode 2004). Any paste-end sequence embedded in the text is
+// stripped first so pasted content cannot terminate the bracket early and
+// inject keystrokes.
+func (e *Emulator) Paste(text string) error {
+	for strings.Contains(text, ansi.BracketedPasteEnd) {
+		text = strings.ReplaceAll(text, ansi.BracketedPasteEnd, "")
+	}
+
+	// vt reads its mode table during Paste and mutates it in ptyReadLoop, so
+	// take the write lock (same as SendMouse).
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if (e.isPipe && e.writer == nil) || (!e.isPipe && e.pty == nil) {
+		return ErrPTYNotInitialized
+	}
+
+	e.vt.Paste(text)
+	return nil
+}
+
 // SendMouse sends a mouse event to the terminal in SGR format
 func (e *Emulator) SendMouse(button int, x, y int, pressed bool) error {
 	// Convert to the vt package's mouse event format

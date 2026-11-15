@@ -120,6 +120,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, sendInput(m.emulator, input)
 		}
 
+	case tea.PasteMsg:
+		if !m.focused || msg.Content == "" {
+			return m, nil
+		}
+		return m, sendPaste(m.emulator, msg.Content)
+
 	case tea.MouseClickMsg:
 		if !m.focused {
 			return m, nil
@@ -253,6 +259,12 @@ func (m *Model) StartCommand(cmd *exec.Cmd) tea.Cmd {
 // SendInput sends input to the terminal
 func (m *Model) SendInput(input string) tea.Cmd {
 	return sendInput(m.emulator, input)
+}
+
+// Paste sends text to the terminal as a paste, wrapping it in bracketed paste
+// sequences when the running program has enabled bracketed paste mode.
+func (m *Model) Paste(text string) tea.Cmd {
+	return sendPaste(m.emulator, text)
 }
 
 // Resize changes the terminal dimensions
