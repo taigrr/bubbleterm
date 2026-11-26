@@ -127,8 +127,13 @@ func newEmulator(cols, rows int) *Emulator {
 	return e
 }
 
-// New creates a new headless terminal emulator
+// New creates a new headless terminal emulator.
+// Both dimensions must be positive; otherwise it returns ErrInvalidSize.
 func New(cols, rows int) (*Emulator, error) {
+	if cols <= 0 || rows <= 0 {
+		return nil, ErrInvalidSize
+	}
+
 	e := newEmulator(cols, rows)
 
 	var err error
@@ -158,7 +163,12 @@ func New(cols, rows int) (*Emulator, error) {
 // and writes input to w, instead of using a PTY. This is useful when the
 // process is already running and you have access to its stdin/stdout pipes.
 // The caller is responsible for closing the reader when the process exits.
+// Both dimensions must be positive; otherwise it returns ErrInvalidSize.
 func NewFromPipes(cols, rows int, r io.Reader, w io.WriteCloser) (*Emulator, error) {
+	if cols <= 0 || rows <= 0 {
+		return nil, ErrInvalidSize
+	}
+
 	e := newEmulator(cols, rows)
 	e.reader = r
 	e.writer = w
@@ -181,7 +191,8 @@ func (e *Emulator) SetSize(cols, rows int) error {
 	return e.Resize(cols, rows)
 }
 
-// Resize changes the terminal dimensions
+// Resize changes the terminal dimensions.
+// Nonpositive dimensions return ErrInvalidSize without changing the terminal.
 func (e *Emulator) Resize(cols, rows int) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -189,6 +200,10 @@ func (e *Emulator) Resize(cols, rows int) error {
 }
 
 func (e *Emulator) resize(cols, rows int) error {
+	if cols <= 0 || rows <= 0 {
+		return ErrInvalidSize
+	}
+
 	if !e.isPipe {
 		err := pty.Setsize(e.pty, &pty.Winsize{
 			Rows: uint16(rows),
